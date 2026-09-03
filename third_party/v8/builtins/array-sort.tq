@@ -2043,7 +2043,15 @@ macro TryNumericArraySort(implicit context: Context)(array: FastJSArray):
       return true;
     }
     if (kind == ElementsKind::PACKED_DOUBLE_ELEMENTS) {
-      NumericSortDouble(UnsafeCast<FixedDoubleArray>(array.elements), length);
+      const elements: FixedDoubleArray =
+          UnsafeCast<FixedDoubleArray>(array.elements);
+      @if(V8_ENABLE_UNDEFINED_DOUBLE) {
+        for (let i: Smi = 0; i < length; ++i) {
+          const slot: float64_or_undefined_or_hole = elements.values[i];
+          if (slot.is_undefined) return false;
+        }
+      }
+      NumericSortDouble(elements, length);
       return true;
     }
     if (kind == ElementsKind::HOLEY_DOUBLE_ELEMENTS) {
@@ -2052,6 +2060,9 @@ macro TryNumericArraySort(implicit context: Context)(array: FastJSArray):
       for (let i: Smi = 0; i < length; ++i) {
         const slot: float64_or_undefined_or_hole = elements.values[i];
         if (slot.is_hole) return false;
+        @if(V8_ENABLE_UNDEFINED_DOUBLE) {
+          if (slot.is_undefined) return false;
+        }
       }
       NumericSortDouble(elements, length);
       return true;
