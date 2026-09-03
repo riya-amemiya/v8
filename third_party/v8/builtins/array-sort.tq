@@ -1922,7 +1922,7 @@ macro NumericDoubleRadixSort(elements: FixedDoubleArray, length: Smi): void {
     const base: Smi = pass << 8;
     let skip: bool = false;
     for (let bucket: Smi = 0; bucket < 256; ++bucket) {
-      if (histogram.objects[base + bucket] == length) {
+      if (UnsafeCast<Smi>(histogram.objects[base + bucket]) == length) {
         skip = true;
         break;
       }
