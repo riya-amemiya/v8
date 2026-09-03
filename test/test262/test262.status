@@ -255,16 +255,6 @@
   # there are only 16 tests. Skip for now.
   'staging/sm/Temporal/*': [SKIP],
 
-  # toLocaleString with just an era setting should format as default
-  # b/463427743
-  'intl402/Temporal/Instant/prototype/toLocaleString/era': [FAIL],
-  'intl402/Temporal/PlainDate/prototype/toLocaleString/era': [FAIL],
-  'intl402/Temporal/PlainDateTime/prototype/toLocaleString/era': [FAIL],
-  'intl402/Temporal/ZonedDateTime/prototype/toLocaleString/era': [FAIL],
-  'intl402/Temporal/PlainYearMonth/prototype/toLocaleString/era': [FAIL],
-  'intl402/DateTimeFormat/prototype/format/temporal-objects-format-with-era': [FAIL],
-  'intl402/DateTimeFormat/prototype/formatRange/temporal-objects-format-with-era': [FAIL],
-
   # DateTimeFormat doesn't respect hourCycle for Temporal
   # b/468559222
   'intl402/Temporal/Instant/prototype/toLocaleString/hourcycle': [SKIP],
