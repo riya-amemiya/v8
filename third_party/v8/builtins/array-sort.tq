@@ -1604,6 +1604,10 @@ extern macro LoadFixedDoubleArrayRawU64(FixedDoubleArray, intptr): uint64;
 extern macro StoreFixedDoubleArrayRawU64(FixedDoubleArray, intptr, uint64):
     void;
 
+macro NumericSignBit(): uint64 {
+  return Convert<uint64>(1) << Convert<uint64>(63);
+}
+
 macro NumericLoad<Elements : type extends FixedArrayBase, Value: type>(
     elements: FixedArrayBase, index: Smi): Value;
 
@@ -1643,7 +1647,7 @@ NumericLess<Smi>(left: Smi, right: Smi): bool {
 
 NumericLess<float64>(left: float64, right: float64): bool {
   if (left == 0 && right == 0) {
-    const sign: uint64 = Convert<uint64>(1) << Convert<uint64>(63);
+    const sign: uint64 = NumericSignBit();
     const leftBits: uint64 = Unsigned(BitcastFloat64ToInt64(left));
     const rightBits: uint64 = Unsigned(BitcastFloat64ToInt64(right));
     return (leftBits & sign) != 0 && (rightBits & sign) == 0;
@@ -1856,7 +1860,7 @@ macro NumericDoubleCountingSort(
     while (count-- > 0) {
       let value: float64 = ChangeInt32ToFloat64(integer);
       if (integer == 0 && negativeZeros > 0) {
-        value = Float64Constant(-0.0);
+        value = BitcastInt64ToFloat64(Signed(NumericSignBit()));
         --negativeZeros;
       }
       NumericStore<FixedDoubleArray>(elements, output++, value);
@@ -1866,12 +1870,12 @@ macro NumericDoubleCountingSort(
 
 macro NumericToSortableU64(value: float64): uint64 {
   const bits: uint64 = Unsigned(BitcastFloat64ToInt64(value));
-  const sign: uint64 = Convert<uint64>(1) << Convert<uint64>(63);
+  const sign: uint64 = NumericSignBit();
   return (bits & sign) != 0 ? ~bits : Word64Xor(bits, sign);
 }
 
 macro NumericFromSortableU64(key: uint64): float64 {
-  const sign: uint64 = Convert<uint64>(1) << Convert<uint64>(63);
+  const sign: uint64 = NumericSignBit();
   const bits: uint64 = (key & sign) != 0 ? Word64Xor(key, sign) : ~key;
   return BitcastInt64ToFloat64(Signed(bits));
 }
@@ -1976,8 +1980,7 @@ macro NumericSortDouble(elements: FixedDoubleArray, length: Smi): void {
       NumericStore<FixedDoubleArray>(elements, valid++, value);
 
       if (value == 0 &&
-          (Unsigned(BitcastFloat64ToInt64(value)) &
-           (Convert<uint64>(1) << Convert<uint64>(63))) != 0) {
+          (Unsigned(BitcastFloat64ToInt64(value)) & NumericSignBit()) != 0) {
         ++negativeZeros;
       }
       const integer: int32 = RoundFloat64ToInt32(value);
