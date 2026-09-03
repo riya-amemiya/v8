@@ -48,6 +48,14 @@ assertEquals(10, withHole[0]);
 assertEquals(2, withHole[1]);
 assertFalse(Object.hasOwn(withHole, 2));
 
+// Undefined-in-double representations are values, not NaNs.
+if (%IsUndefinedDoubleEnabled()) {
+  const withUndefined = [3.5, undefined, 2.5];
+  assertTrue(%HasDoubleElements(withUndefined));
+  withUndefined.sort();
+  assertEquals([2.5, 3.5, undefined], withUndefined);
+}
+
 // Smi counting-sort range checks must not overflow.
 const wideSmis = [];
 for (let i = 0; i < 16; ++i) {
