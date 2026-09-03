@@ -1973,24 +1973,25 @@ macro NumericSortDouble(elements: FixedDoubleArray, length: Smi): void {
 
   for (let i: Smi = 0; i < length; ++i) {
     const value: float64 = NumericLoad<FixedDoubleArray, float64>(elements, i);
-    if (value != value) continue;
-    NumericStore<FixedDoubleArray>(elements, valid++, value);
+    if (value == value) {
+      NumericStore<FixedDoubleArray>(elements, valid++, value);
 
-    if (value == 0 &&
-        (Unsigned(BitcastFloat64ToInt64(value)) &
-         (Convert<uint64>(1) << Convert<uint64>(63))) != 0) {
-      ++negativeZeros;
-    }
-    const integer: int32 = RoundFloat64ToInt32(value);
-    if (ChangeInt32ToFloat64(integer) != value) {
-      canCount = false;
-    } else if (!hasRange) {
-      minInteger = integer;
-      maxInteger = integer;
-      hasRange = true;
-    } else {
-      if (integer < minInteger) minInteger = integer;
-      if (integer > maxInteger) maxInteger = integer;
+      if (value == 0 &&
+          (Unsigned(BitcastFloat64ToInt64(value)) &
+           (Convert<uint64>(1) << Convert<uint64>(63))) != 0) {
+        ++negativeZeros;
+      }
+      const integer: int32 = RoundFloat64ToInt32(value);
+      if (ChangeInt32ToFloat64(integer) != value) {
+        canCount = false;
+      } else if (!hasRange) {
+        minInteger = integer;
+        maxInteger = integer;
+        hasRange = true;
+      } else {
+        if (integer < minInteger) minInteger = integer;
+        if (integer > maxInteger) maxInteger = integer;
+      }
     }
   }
 
