@@ -1867,12 +1867,12 @@ macro NumericDoubleCountingSort(
 macro NumericToSortableU64(value: float64): uint64 {
   const bits: uint64 = Unsigned(BitcastFloat64ToInt64(value));
   const sign: uint64 = Convert<uint64>(1) << Convert<uint64>(63);
-  return (bits & sign) != 0 ? ~bits : bits ^ sign;
+  return (bits & sign) != 0 ? ~bits : Word64Xor(bits, sign);
 }
 
 macro NumericFromSortableU64(key: uint64): float64 {
   const sign: uint64 = Convert<uint64>(1) << Convert<uint64>(63);
-  const bits: uint64 = (key & sign) != 0 ? key ^ sign : ~key;
+  const bits: uint64 = (key & sign) != 0 ? Word64Xor(key, sign) : ~key;
   return BitcastInt64ToFloat64(Signed(bits));
 }
 
