@@ -831,6 +831,10 @@ ExternalReference ExternalReference::address_of_min_int() {
   return ExternalReference(reinterpret_cast<Address>(&double_min_int_constant));
 }
 
+ExternalReference ExternalReference::address_of_array_numeric_sort_flag() {
+  return ExternalReference(&v8_flags.array_numeric_sort);
+}
+
 ExternalReference
 ExternalReference::address_of_mock_arraybuffer_allocator_flag() {
   return ExternalReference(&v8_flags.mock_arraybuffer_allocator);

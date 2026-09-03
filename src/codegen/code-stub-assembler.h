@@ -2004,6 +2004,23 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TNode<FixedDoubleArray> object, TNode<TIndex> index,
       TNode<Float64T> value, CheckBounds check_bounds = CheckBounds::kAlways);
 
+  TNode<Uint64T> LoadFixedDoubleArrayRawU64(
+      TNode<FixedDoubleArray> object, TNode<IntPtrT> index) {
+    TNode<IntPtrT> offset = ElementOffsetFromIndex(
+        index, HOLEY_DOUBLE_ELEMENTS,
+        OFFSET_OF_DATA_START(FixedDoubleArray) - kHeapObjectTag);
+    return UncheckedCast<Uint64T>(
+        Load(MachineType::Uint64(), object, offset));
+  }
+  void StoreFixedDoubleArrayRawU64(TNode<FixedDoubleArray> object,
+                                   TNode<IntPtrT> index, TNode<Uint64T> bits) {
+    TNode<IntPtrT> offset = ElementOffsetFromIndex(
+        index, HOLEY_DOUBLE_ELEMENTS,
+        OFFSET_OF_DATA_START(FixedDoubleArray) - kHeapObjectTag);
+    StoreNoWriteBarrier(
+        MachineRepresentation::kWord64, object, offset, bits);
+  }
+
   void StoreDoubleHole(TNode<HeapObject> object, TNode<IntPtrT> offset);
 #ifdef V8_ENABLE_UNDEFINED_DOUBLE
   void StoreDoubleUndefined(TNode<HeapObject> object, TNode<IntPtrT> offset);
@@ -3071,6 +3088,11 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
         Load(MachineType::Uint8(), ExternalConstant(address_of_flag)));
     return Word32NotEqual(Word32And(flag_value, Int32Constant(0xFF)),
                           Int32Constant(0));
+  }
+
+  TNode<BoolT> IsArrayNumericSortEnabled() {
+    return LoadRuntimeFlag(
+        ExternalReference::address_of_array_numeric_sort_flag());
   }
 
   TNode<BoolT> IsMockArrayBufferAllocatorFlag() {
