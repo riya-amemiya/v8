@@ -1979,20 +1979,22 @@ macro NumericSortDouble(elements: FixedDoubleArray, length: Smi): void {
     if (value == value) {
       NumericStore<FixedDoubleArray>(elements, valid++, value);
 
-      if (value == 0 &&
-          (Unsigned(BitcastFloat64ToInt64(value)) & NumericSignBit()) != 0) {
-        ++negativeZeros;
-      }
-      const integer: int32 = RoundFloat64ToInt32(value);
-      if (ChangeInt32ToFloat64(integer) != value) {
-        canCount = false;
-      } else if (!hasRange) {
-        minInteger = integer;
-        maxInteger = integer;
-        hasRange = true;
-      } else {
-        if (integer < minInteger) minInteger = integer;
-        if (integer > maxInteger) maxInteger = integer;
+      if (canCount) {
+        if (value == 0 &&
+            (Unsigned(BitcastFloat64ToInt64(value)) & NumericSignBit()) != 0) {
+          ++negativeZeros;
+        }
+        const integer: int32 = RoundFloat64ToInt32(value);
+        if (ChangeInt32ToFloat64(integer) != value) {
+          canCount = false;
+        } else if (!hasRange) {
+          minInteger = integer;
+          maxInteger = integer;
+          hasRange = true;
+        } else {
+          if (integer < minInteger) minInteger = integer;
+          if (integer > maxInteger) maxInteger = integer;
+        }
       }
     }
   }
@@ -2045,12 +2047,6 @@ macro TryNumericArraySort(implicit context: Context)(array: FastJSArray):
     if (kind == ElementsKind::PACKED_DOUBLE_ELEMENTS) {
       const elements: FixedDoubleArray =
           UnsafeCast<FixedDoubleArray>(array.elements);
-      @if(V8_ENABLE_UNDEFINED_DOUBLE) {
-        for (let i: Smi = 0; i < length; ++i) {
-          const slot: float64_or_undefined_or_hole = elements.values[i];
-          if (slot.is_undefined) return false;
-        }
-      }
       NumericSortDouble(elements, length);
       return true;
     }
