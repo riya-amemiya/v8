@@ -2004,21 +2004,25 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
       TNode<FixedDoubleArray> object, TNode<TIndex> index,
       TNode<Float64T> value, CheckBounds check_bounds = CheckBounds::kAlways);
 
-  TNode<Uint64T> LoadFixedDoubleArrayRawU64(
-      TNode<FixedDoubleArray> object, TNode<IntPtrT> index) {
+  TNode<Uint64T> LoadFixedDoubleArrayRawU64(TNode<FixedDoubleArray> object,
+                                            TNode<IntPtrT> index) {
     TNode<IntPtrT> offset = ElementOffsetFromIndex(
         index, HOLEY_DOUBLE_ELEMENTS,
         OFFSET_OF_DATA_START(FixedDoubleArray) - kHeapObjectTag);
-    return UncheckedCast<Uint64T>(
-        Load(MachineType::Uint64(), object, offset));
+    CSA_DCHECK(this, IsOffsetInBounds(offset, LoadFixedArrayBaseLength(object),
+                                      OFFSET_OF_DATA_START(FixedDoubleArray),
+                                      HOLEY_DOUBLE_ELEMENTS));
+    return UncheckedCast<Uint64T>(Load(MachineType::Uint64(), object, offset));
   }
   void StoreFixedDoubleArrayRawU64(TNode<FixedDoubleArray> object,
                                    TNode<IntPtrT> index, TNode<Uint64T> bits) {
     TNode<IntPtrT> offset = ElementOffsetFromIndex(
         index, HOLEY_DOUBLE_ELEMENTS,
         OFFSET_OF_DATA_START(FixedDoubleArray) - kHeapObjectTag);
-    StoreNoWriteBarrier(
-        MachineRepresentation::kWord64, object, offset, bits);
+    CSA_DCHECK(this, IsOffsetInBounds(offset, LoadFixedArrayBaseLength(object),
+                                      OFFSET_OF_DATA_START(FixedDoubleArray),
+                                      HOLEY_DOUBLE_ELEMENTS));
+    StoreNoWriteBarrier(MachineRepresentation::kWord64, object, offset, bits);
   }
 
   void StoreDoubleHole(TNode<HeapObject> object, TNode<IntPtrT> offset);

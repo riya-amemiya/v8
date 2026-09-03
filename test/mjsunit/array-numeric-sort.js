@@ -34,12 +34,36 @@ assertNumericSort([3, 20, 1]);
 assertNumericSort([9, -3, 20, 1, 0, 8, 7]);
 assertNumericSort([3.5, -0, 0, -2.25, NaN, Infinity, -Infinity]);
 
+// Exact insertion/quicksort and quicksort/radix boundaries.
+for (const length of [15, 16, 2047, 2048]) {
+  const values = [];
+  for (let i = 0; i < length; ++i) {
+    values.push(((i * 1543) % 4099) - 2049.5);
+  }
+  assertTrue(%HasDoubleElements(values));
+  assertNumericSort(values);
+}
+
+// Narrow-range Smis select counting sort.
+const countingSmis = [];
+for (let i = 0; i < 64; ++i) countingSmis.push((i * 17) % 11 - 5);
+assertTrue(%HasSmiElements(countingSmis));
+assertNumericSort(countingSmis);
+
 // Hole-free HOLEY_SMI_ELEMENTS is eligible.
 const holeFreeHoleySmi = [4, 3, 2, 1];
 delete holeFreeHoleySmi[0];
 holeFreeHoleySmi[0] = 10;
 assertTrue(%HasHoleyElements(holeFreeHoleySmi));
 assertNumericSort(holeFreeHoleySmi);
+
+// Hole-free HOLEY_DOUBLE_ELEMENTS is eligible.
+const holeFreeHoleyDouble = [4.5, 3.5, 2.5, 1.5];
+delete holeFreeHoleyDouble[1];
+holeFreeHoleyDouble[1] = 10.5;
+assertTrue(%HasDoubleElements(holeFreeHoleyDouble));
+assertTrue(%HasHoleyElements(holeFreeHoleyDouble));
+assertNumericSort(holeFreeHoleyDouble);
 
 // A real hole falls back to the specification's default string order.
 const withHole = [10, , 2];

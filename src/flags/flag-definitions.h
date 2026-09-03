@@ -1036,9 +1036,10 @@ DEFINE_BOOL_READONLY(internalize_on_the_fly, true,
 DEFINE_BOOL(unbox_double_arrays, true, "automatically unbox arrays of doubles")
 // Deliberately uses numeric rather than the specification's default string
 // ordering. This is intended only for performance experiments.
-DEFINE_BOOL(array_numeric_sort, false,
-            "use numeric ordering for dense number arrays sorted without a "
-            "compare function")
+DEFINE_EXPERIMENTAL_FEATURE(
+    array_numeric_sort,
+    "use numeric ordering for dense number arrays sorted without a compare "
+    "function")
 DEFINE_BOOL_READONLY(string_slices, true, "use string slices")
 
 // Tiering: Sparkplug / feedback vector allocation.
