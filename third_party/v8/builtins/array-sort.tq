@@ -1901,8 +1901,7 @@ macro NumericRadixScatter(
 macro NumericDoubleRadixSort(elements: FixedDoubleArray, length: Smi): void {
   const destination: FixedDoubleArray =
       AllocateZeroedFixedDoubleArray(SmiUntag(length));
-  const histogram: FixedArray =
-      AllocateZeroedFixedArray(IntPtrConstant(8 * 256));
+  const histogram: FixedArray = AllocateZeroedFixedArray(IntPtrConstant(2048));
 
   for (let i: Smi = 0; i < length; ++i) {
     const key: uint64 = NumericToSortableU64(
@@ -2048,7 +2047,8 @@ macro TryNumericArraySort(implicit context: Context)(array: FastJSArray):
       const elements: FixedDoubleArray =
           UnsafeCast<FixedDoubleArray>(array.elements);
       for (let i: Smi = 0; i < length; ++i) {
-        if (elements.values[i].is_hole) return false;
+        const slot: float64_or_undefined_or_hole = elements.values[i];
+        if (slot.is_hole) return false;
       }
       NumericSortDouble(elements, length);
       return true;
