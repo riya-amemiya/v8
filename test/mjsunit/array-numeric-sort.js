@@ -48,6 +48,19 @@ assertEquals(10, withHole[0]);
 assertEquals(2, withHole[1]);
 assertFalse(Object.hasOwn(withHole, 2));
 
+// A holey length can exceed the elements backing-store capacity.
+const sparseSmiTail = [10, 2];
+sparseSmiTail.length = 1000;
+sparseSmiTail.sort();
+assertEquals(10, sparseSmiTail[0]);
+assertEquals(2, sparseSmiTail[1]);
+
+const sparseDoubleTail = [10.5, 2.5];
+sparseDoubleTail.length = 1000;
+sparseDoubleTail.sort();
+assertEquals(10.5, sparseDoubleTail[0]);
+assertEquals(2.5, sparseDoubleTail[1]);
+
 // Undefined-in-double representations are values, not NaNs.
 if (%IsUndefinedDoubleEnabled()) {
   const withUndefined = [3.5, undefined, 2.5];
