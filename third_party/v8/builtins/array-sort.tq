@@ -1927,22 +1927,22 @@ macro NumericDoubleRadixSort(elements: FixedDoubleArray, length: Smi): void {
         break;
       }
     }
-    if (skip) continue;
-
-    for (let bucket: Smi = 1; bucket < 256; ++bucket) {
-      const slot: Smi = base + bucket;
-      histogram.objects[slot] = UnsafeCast<Smi>(histogram.objects[slot]) +
-          UnsafeCast<Smi>(histogram.objects[slot - 1]);
+    if (!skip) {
+      for (let bucket: Smi = 1; bucket < 256; ++bucket) {
+        const slot: Smi = base + bucket;
+        histogram.objects[slot] = UnsafeCast<Smi>(histogram.objects[slot]) +
+            UnsafeCast<Smi>(histogram.objects[slot - 1]);
+      }
+      const shift: Smi = pass << 3;
+      if ((scatterCount & 1) == 0) {
+        NumericRadixScatter(
+            elements, destination, histogram, length, base, shift);
+      } else {
+        NumericRadixScatter(
+            destination, elements, histogram, length, base, shift);
+      }
+      ++scatterCount;
     }
-    const shift: Smi = pass << 3;
-    if ((scatterCount & 1) == 0) {
-      NumericRadixScatter(
-          elements, destination, histogram, length, base, shift);
-    } else {
-      NumericRadixScatter(
-          destination, elements, histogram, length, base, shift);
-    }
-    ++scatterCount;
   }
 
   if ((scatterCount & 1) == 0) {
