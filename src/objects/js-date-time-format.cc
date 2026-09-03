@@ -1358,7 +1358,10 @@ icu::UnicodeString GetDateTimeFormat(const icu::UnicodeString& options,
       }
       format_options.append(ch);
       //     ii. Set needDefaults to false.
-      need_defaults = false;
+      // The [[era]] option does not suppress defaults.
+      if (ch != 'G') {
+        need_defaults = false;
+      }
     }
     last_ch = ch;
   }
