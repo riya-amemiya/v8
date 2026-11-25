@@ -2,62 +2,7 @@ import ArrayFlat.Machine
 
 namespace ArrayFlat
 
-inductive Reach {σ ρ : Type} (step : σ → Step σ ρ) : σ → σ → Prop
-  | refl (s : σ) : Reach step s s
-  | next {s t u : σ} : step s = .cont t → Reach step t u → Reach step s u
-
-theorem Reach.invariant {σ ρ : Type} {step : σ → Step σ ρ} {P : σ → Prop}
-    (hpres : ∀ s t, P s → step s = .cont t → P t) {s u : σ} (hr : Reach step s u)
-    (hs : P s) : P u := by
-  induction hr with
-  | refl => exact hs
-  | next hst _ ih => exact ih (hpres _ _ hs hst)
-
-theorem Reach.backward {σ ρ : Type} {step : σ → Step σ ρ} {P : σ → Prop}
-    (hback : ∀ s t, step s = .cont t → P t → P s) {s u : σ} (hr : Reach step s u)
-    (hu : P u) : P s := by
-  induction hr with
-  | refl => exact hu
-  | next hst _ ih => exact hback _ _ hst (ih hu)
-
-theorem run_spec {σ ρ : Type} (step : σ → Step σ ρ) (μ : σ → Nat)
-    (hdec : ∀ s s', step s = .cont s' → μ s' < μ s) (s : σ) :
-    ∃ t, Reach step s t ∧ (step t).result = some (run step μ hdec s) := by
-  rw [run]
-  split
-  next s' h =>
-    have : μ s' < μ s := hdec s s' h
-    obtain ⟨t, ht, hr⟩ := run_spec step μ hdec s'
-    exact ⟨t, .next h ht, hr⟩
-  next r h => exact ⟨s, .refl s, by simp [h, Step.result]⟩
-  next h => exact ⟨s, .refl s, by simp [h, Step.result]⟩
-  next h => exact ⟨s, .refl s, by simp [h, Step.result]⟩
-  next h => exact ⟨s, .refl s, by simp [h, Step.result]⟩
-termination_by μ s
-
-theorem run_ok {σ ρ : Type} {step : σ → Step σ ρ} {μ : σ → Nat}
-    {hdec : ∀ s s', step s = .cont s' → μ s' < μ s} {s : σ} {r : ρ}
-    (h : run step μ hdec s = .ok r) : ∃ t, Reach step s t ∧ step t = .done r := by
-  obtain ⟨t, ht, hr⟩ := run_spec step μ hdec s
-  rw [h] at hr
-  refine ⟨t, ht, ?_⟩
-  cases hs : step t <;> simp_all [Step.result]
-
-theorem run_ub {σ ρ : Type} {step : σ → Step σ ρ} {μ : σ → Nat}
-    {hdec : ∀ s s', step s = .cont s' → μ s' < μ s} {s : σ}
-    (h : run step μ hdec s = .ub) : ∃ t, Reach step s t ∧ step t = .ub := by
-  obtain ⟨t, ht, hr⟩ := run_spec step μ hdec s
-  rw [h] at hr
-  refine ⟨t, ht, ?_⟩
-  cases hs : step t <;> simp_all [Step.result]
-
-theorem run_ne_fatal {σ ρ : Type} (step : σ → Step σ ρ) (μ : σ → Nat)
-    (hdec : ∀ s s', step s = .cont s' → μ s' < μ s) (s : σ) :
-    run step μ hdec s ≠ .fatal := by
-  intro h
-  obtain ⟨t, _, hr⟩ := run_spec step μ hdec s
-  rw [h] at hr
-  cases hs : step t <;> simp_all [Step.result]
+open Torque
 
 def Covers (s : P1) (out : List Val) : Prop :=
   ∀ v ∈ out, v.isSmi = true ∨ (s.seenDouble = true ∧ v.isNumber = true) ∨ s.seenObject = true
@@ -662,9 +607,9 @@ theorem conforms_kind {k : Kind} {L : List Val} (h : Conforms k L) :
   | _ => exact absurd h id
 
 theorem result_wf {k : Kind} {L : List Val} (h : Conforms k L) :
-    (⟨k, true, true, L.length, L.map some⟩ : JSArr).WF := by
+    (⟨k, true, true, true, false, L.length, L.map some⟩ : JSArr).WF := by
   obtain ⟨hk, hok⟩ := conforms_kind h
-  refine ⟨by simp, ?_, ?_, fun _ => rfl⟩
+  refine ⟨by simp, ?_, ?_, fun _ => rfl, fun _ => rfl, fun h => by cases h⟩
   · intro x hx
     simp only [JSArr.elems] at hx
     exact hok x (List.mem_of_mem_take hx)
@@ -683,7 +628,7 @@ theorem finish_ok {len : Nat} {k : Kind} {o : Outcome P2} {A : JSArr} {L : List 
     (hfin : finish len k o = .ok A)
     (hspec : ∀ r, o = .ok r → r.ti = L.length ∧
       r.buf = L.map some ++ List.replicate (len - L.length) none) :
-    A = ⟨k, true, true, L.length, L.map some⟩ := by
+    A = ⟨k, true, true, true, false, L.length, L.map some⟩ := by
   cases o with
   | ok r =>
     simp only [finish] at hfin
@@ -713,7 +658,8 @@ theorem tryFastFlat_ok {cfg : Config} {H : Heap} (hH : HeapWF H) {root srcLen de
       subst h0
       cases h
       rw [flatSpec_zero hH hc]
-      exact ⟨⟨by simp, by simp [JSArr.elems], fun _ => rfl, fun _ => rfl⟩, Or.inl rfl, rfl, rfl⟩
+      exact ⟨⟨by simp, by simp [JSArr.elems], fun _ => rfl, fun _ => rfl, fun _ => rfl,
+        fun h => by cases h⟩, Or.inl rfl, rfl, rfl⟩
     split at h
     · cases h
     split at h

@@ -1,0 +1,11 @@
+name = "V8Formal"
+defaultTargets = ["Torque", "ArrayFlat", "ArrayCopyWithin"]
+
+[[lean_lib]]
+name = "Torque"
+
+[[lean_lib]]
+name = "ArrayFlat"
+
+[[lean_lib]]
+name = "ArrayCopyWithin"

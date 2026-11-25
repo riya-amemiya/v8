@@ -2,6 +2,8 @@ import ArrayFlat.Model
 
 namespace ArrayFlat
 
+open Torque
+
 theorem descend?_some {d : Nat} {v : Val} {d' q : Nat} (h : descend? d v = some (d', q)) :
     d = d' + 1 ∧ v = .arr q := by
   cases d with
@@ -50,62 +52,6 @@ theorem leaves_of_noArr (H : Heap) (d : Nat) :
       leaves_of_noArr H d l (fun y hy => hl y (by simp [hy]))]
     simp
 
-theorem map_some_filterMap_id :
-    ∀ l : List (Option Val), (∀ x ∈ l, x ≠ none) → (l.filterMap id).map some = l
-  | [], _ => rfl
-  | x :: l, hl => by
-    cases x with
-    | none => exact absurd rfl (hl none (by simp))
-    | some v =>
-      simp only [List.filterMap_cons, id, List.map_cons]
-      rw [map_some_filterMap_id l (fun y hy => hl y (by simp [hy]))]
-
-theorem length_filterMap_id_of_all_some (l : List (Option Val)) (hl : ∀ x ∈ l, x ≠ none) :
-    (l.filterMap id).length = l.length := by
-  have := congrArg List.length (map_some_filterMap_id l hl)
-  simpa using this
-
-theorem mem_filterMap_id {v : Val} {l : List (Option Val)} :
-    v ∈ l.filterMap id ↔ some v ∈ l := by
-  simp
-
-theorem JSArr.elems_length {a : JSArr} (hw : a.WF) : a.elems.length = a.length := by
-  simp [JSArr.elems, List.length_take]
-  exact Nat.min_eq_left hw.length_le
-
-theorem packedSmi_elem {a : JSArr} (hw : a.WF) (hk : a.kind = .packedSmi) {x : Option Val}
-    (hx : x ∈ a.elems) : ∃ v, x = some v ∧ v.isSmi = true := by
-  have := hw.kind_ok x hx
-  rw [hk] at this
-  cases x with
-  | none => simp [kindOk] at this
-  | some v => exact ⟨v, rfl, by simpa [kindOk] using this⟩
-
-theorem packedDouble_elem {a : JSArr} (hw : a.WF) (hk : a.kind = .packedDouble)
-    {x : Option Val} (hx : x ∈ a.elems) : ∃ v, x = some v ∧ v.isNumber = true := by
-  have := hw.kind_ok x hx
-  rw [hk] at this
-  cases x with
-  | none => simp [kindOk] at this
-  | some v => exact ⟨v, rfl, by simpa [kindOk] using this⟩
-
-theorem not_arr_of_isNumber {v : Val} (h : v.isNumber = true) : ∀ p, v ≠ .arr p := by
-  intro p hp
-  subst hp
-  simp [Val.isNumber] at h
-
-theorem isNumber_of_isSmi {v : Val} (h : v.isSmi = true) : v.isNumber = true := by
-  cases v <;> simp_all [Val.isSmi, Val.isNumber]
-
-theorem numeric_elems {a : JSArr} (hw : a.WF)
-    (hk : a.kind = .packedSmi ∨ a.kind = .packedDouble) :
-    ∀ x ∈ a.elems, ∃ v, x = some v ∧ v.isNumber = true := by
-  intro x hx
-  rcases hk with hk | hk
-  · obtain ⟨v, rfl, hv⟩ := packedSmi_elem hw hk hx
-    exact ⟨v, rfl, isNumber_of_isSmi hv⟩
-  · exact packedDouble_elem hw hk hx
-
 theorem leaves_numeric (H : Heap) (d : Nat) {a : JSArr} (hw : a.WF)
     (hk : a.kind = .packedSmi ∨ a.kind = .packedDouble) :
     leaves H d a.elems = a.elems.filterMap id := by
@@ -113,12 +59,6 @@ theorem leaves_numeric (H : Heap) (d : Nat) {a : JSArr} (hw : a.WF)
   intro x hx
   obtain ⟨v, rfl, hv⟩ := numeric_elems hw hk x hx
   exact ⟨v, rfl, not_arr_of_isNumber hv⟩
-
-theorem numeric_elems_some {a : JSArr} (hw : a.WF)
-    (hk : a.kind = .packedSmi ∨ a.kind = .packedDouble) : ∀ x ∈ a.elems, x ≠ none := by
-  intro x hx
-  obtain ⟨v, rfl, _⟩ := numeric_elems hw hk x hx
-  simp
 
 theorem leaves_numeric_length (H : Heap) (d : Nat) {a : JSArr} (hw : a.WF)
     (hk : a.kind = .packedSmi ∨ a.kind = .packedDouble) :
@@ -291,16 +231,5 @@ theorem measure_pop {H : Heap} {f : Frame} (g : Frame) (S : List Frame)
   simp only [frameMeasure, Frame.cost, rest_of_exhausted h, cost_nil, List.map_cons,
     List.sum_cons]
   omega
-
-theorem blit_spec (out : List Val) (src : List (Option Val)) (k : Nat) :
-    blit (out.map some ++ List.replicate k none) out.length src =
-      out.map some ++ src ++ List.replicate (k - src.length) none := by
-  have h1 : (out.map some ++ List.replicate k none).take out.length = out.map some := by
-    simp
-  have h2 : (out.map some ++ List.replicate k none).drop (out.length + src.length) =
-      List.replicate (k - src.length) none := by
-    rw [List.drop_append]
-    simp [List.drop_replicate]
-  simp only [blit, h1, h2]
 
 end ArrayFlat
