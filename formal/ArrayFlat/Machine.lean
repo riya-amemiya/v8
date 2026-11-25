@@ -2,39 +2,7 @@ import ArrayFlat.Lemmas
 
 namespace ArrayFlat
 
-inductive Step (σ ρ : Type) where
-  | cont (s : σ)
-  | done (r : ρ)
-  | bailout
-  | throwRange
-  | ub
-
-inductive Outcome (ρ : Type) where
-  | ok (r : ρ)
-  | bailout
-  | throwRange
-  | ub
-  | fatal
-  deriving Repr
-
-def Step.result {σ ρ : Type} : Step σ ρ → Option (Outcome ρ)
-  | .cont _ => none
-  | .done r => some (.ok r)
-  | .bailout => some .bailout
-  | .throwRange => some .throwRange
-  | .ub => some .ub
-
-def run {σ ρ : Type} (step : σ → Step σ ρ) (μ : σ → Nat)
-    (hdec : ∀ s s', step s = .cont s' → μ s' < μ s) (s : σ) : Outcome ρ :=
-  match h : step s with
-  | .cont s' =>
-    have : μ s' < μ s := hdec s s' h
-    run step μ hdec s'
-  | .done r => .ok r
-  | .bailout => .bailout
-  | .throwRange => .throwRange
-  | .ub => .ub
-termination_by μ s
+open Torque
 
 structure P1 where
   cur : Frame
@@ -306,7 +274,7 @@ def calcLength (cfg : Config) (H : Heap) (root srcLen depth : Nat) : Outcome (Na
   else run1 cfg H (init1 root srcLen depth)
 
 def finish (len : Nat) (k : Kind) : Outcome P2 → Outcome JSArr
-  | .ok s => if s.ti = len then .ok ⟨k, true, true, len, s.buf⟩ else .bailout
+  | .ok s => if s.ti = len then .ok ⟨k, true, true, true, false, len, s.buf⟩ else .bailout
   | .bailout => .bailout
   | .throwRange => .throwRange
   | .ub => .ub
@@ -317,7 +285,7 @@ def tryFastFlat (cfg : Config) (H : Heap) (root srcLen depth : Nat) : Outcome JS
   else if (H root).forCopy = false then .bailout
   else match calcLength cfg H root srcLen depth with
     | .ok (len, k) =>
-      if len = 0 then .ok ⟨.packedSmi, true, true, 0, []⟩
+      if len = 0 then .ok ⟨.packedSmi, true, true, true, false, 0, []⟩
       else if cfg.maxLen < len then .fatal
       else if (H root).forRead = false then .bailout
       else if k = .packedDouble then finish len k (runDbl cfg H (init2 root srcLen depth len))

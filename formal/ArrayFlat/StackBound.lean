@@ -2,6 +2,8 @@ import ArrayFlat.Safety
 
 namespace ArrayFlat
 
+open Torque
+
 theorem step1_stack {cfg : Config} {H : Heap} (s t : P1) (hs : s.stack.length ≤ 1024)
     (h : step1 cfg H s = .cont t) : t.stack.length ≤ 1024 := by
   unfold step1 at h

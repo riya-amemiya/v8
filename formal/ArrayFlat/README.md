@@ -2,26 +2,15 @@
 
 This directory contains a machine-checked model of the Torque fast path
 `TryFastFlat` in `src/builtins/array-flat.tq` and proofs of its safety
-properties. The proofs use only the Lean 4 core library.
-
-## Checking the proofs
-
-The toolchain is pinned in `lean-toolchain` (Lean 4.36.0).
-
-```bash
-cd formal/array-flat
-lake build
-```
-
-A successful build means every theorem below is proved. `#print axioms` on the
-main theorems reports only `propext`, `Quot.sound` and `Classical.choice`.
+properties. The model builds on the shared library in `formal/Torque`, and
+`formal/README.md` describes how to check the proofs.
 
 ## Files
 
 | File | Contents |
 | --- | --- |
-| `ArrayFlat/Model.lean` | Values, elements kinds, arrays, heap well-formedness, the reference semantics `flatSpec`, frames and the termination measure |
-| `ArrayFlat/Lemmas.lean` | List, frame and measure lemmas shared by the proofs |
+| `ArrayFlat/Model.lean` | The reference semantics `flatSpec`, frames, `fetch` and the termination measure |
+| `ArrayFlat/Lemmas.lean` | Spec, frame and measure lemmas shared by the proofs |
 | `ArrayFlat/Machine.lean` | The three loops as step functions, their runs, `calcLength` and `tryFastFlat` |
 | `ArrayFlat/Safety.lean` | Invariants, absence of undefined behavior, result well-formedness, functional correctness |
 | `ArrayFlat/StackBound.lean` | Bounds on the explicit traversal stack |
@@ -40,7 +29,7 @@ main theorems reports only `propext`, `Quot.sound` and `Classical.choice`.
 | `finish` | the `targetIndex != flattenedLength` bailout and `NewJSArray` |
 | `tryFastFlat` | `TryFastFlat` |
 | `Frame` | the four stack entries `array`, `length`, `index`, `depth` |
-| `blit` | `TorqueCopyElements` and single-slot stores into the result backing store |
+| `Torque.blit` | `TorqueCopyElements` and single-slot stores into the result backing store |
 | `Outcome.ub` | an out-of-bounds read or write, or `UnsafeCast<Number>` on a non-number |
 | `Outcome.fatal` | `FatalProcessOutOfMemoryInvalidArrayLength` from `AllocateFixedArray` |
 
@@ -50,7 +39,8 @@ new array, and an exhausted array pops the stack.
 
 ## Theorems
 
-Termination. `run` is defined by well-founded recursion on `frameMeasure`, and
+Termination. `Torque.run` is defined by well-founded recursion on a measure, and
+each loop runs it with `frameMeasure`;
 `step1_decreases`, `stepGen_decreases` and `stepDbl_decreases` show that every
 step of each loop decreases it. The measure is computed by recursion on the
 remaining depth, so the three loops terminate on every heap, including heaps
@@ -87,13 +77,8 @@ by the first pass equals the length of the flattened result.
 
 ## Assumptions
 
-`HeapWF` states the heap invariants the proofs rely on. Every fast array has
-`length` at most its backing store length, which `JSArray::JSArrayVerify` checks
-for fast elements unless the backing store is `empty_fixed_array`. Packed kinds hold no holes,
-Smi kinds hold only Smis, `PACKED_DOUBLE_ELEMENTS` holds only numbers and
-`HOLEY_DOUBLE_ELEMENTS` may additionally hold `undefined`. An array passing the
-`FastJSArrayForRead` cast has a fast elements kind, and `FastJSArrayForCopy`
-implies `FastJSArrayForRead`.
+The proofs assume the shared heap invariants `HeapWF` described in
+`formal/README.md`.
 
 The heap is a single snapshot for the whole of `TryFastFlat`. No JavaScript
 runs inside `TryFastFlat`, so `fastOW.Recheck()` and `PerformStackCheck()` are

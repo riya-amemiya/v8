@@ -2,11 +2,15 @@ import ArrayFlat.Machine
 
 namespace ArrayFlat.Examples
 
+open Torque
+
 def v8Config : Config := ⟨2 ^ 30 - 1, 128 * 1024 * 1024⟩
 
-def mk (kind : Kind) (xs : List (Option Val)) : JSArr := ⟨kind, true, true, xs.length, xs⟩
+def mk (kind : Kind) (xs : List (Option Val)) : JSArr :=
+  ⟨kind, true, true, true, false, xs.length, xs⟩
 
-def heapOf (arrays : List JSArr) : Heap := fun p => arrays.getD p ⟨.slow, false, false, 0, []⟩
+def heapOf (arrays : List JSArr) : Heap := fun p =>
+  arrays.getD p ⟨.slow, false, false, false, false, 0, []⟩
 
 def result : Outcome JSArr → Option (Kind × List (Option Val))
   | .ok a => some (a.kind, a.store)

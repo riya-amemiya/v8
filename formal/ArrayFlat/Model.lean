@@ -1,77 +1,8 @@
+import Torque
+
 namespace ArrayFlat
 
-inductive Val where
-  | smi (n : Int)
-  | num (n : Nat)
-  | arr (p : Nat)
-  | proxy
-  | other
-  deriving DecidableEq, Repr
-
-namespace Val
-
-def isSmi : Val → Bool
-  | smi _ => true
-  | _ => false
-
-def isNumber : Val → Bool
-  | smi _ => true
-  | num _ => true
-  | _ => false
-
-end Val
-
-inductive Kind where
-  | packedSmi
-  | holeySmi
-  | packedDouble
-  | holeyDouble
-  | packedElem
-  | holeyElem
-  | slow
-  deriving DecidableEq, Repr
-
-def Kind.isFast : Kind → Bool
-  | .slow => false
-  | _ => true
-
-def kindOk : Kind → Option Val → Bool
-  | .packedSmi, some v => v.isSmi
-  | .packedSmi, none => false
-  | .packedDouble, some v => v.isNumber
-  | .packedDouble, none => false
-  | .packedElem, some _ => true
-  | .packedElem, none => false
-  | .holeySmi, some v => v.isSmi
-  | .holeySmi, none => true
-  | .holeyDouble, some v => v.isNumber || v == .other
-  | .holeyDouble, none => true
-  | .holeyElem, _ => true
-  | .slow, _ => true
-
-structure JSArr where
-  kind : Kind
-  forRead : Bool
-  forCopy : Bool
-  length : Nat
-  store : List (Option Val)
-  deriving Repr
-
-def JSArr.elems (a : JSArr) : List (Option Val) := a.store.take a.length
-
-structure JSArr.WF (a : JSArr) : Prop where
-  length_le : a.length ≤ a.store.length
-  kind_ok : ∀ x ∈ a.elems, kindOk a.kind x = true
-  forRead_fast : a.forRead = true → a.kind.isFast = true
-  forCopy_forRead : a.forCopy = true → a.forRead = true
-
-abbrev Heap := Nat → JSArr
-
-def HeapWF (H : Heap) : Prop := ∀ p, (H p).WF
-
-structure Config where
-  smiMax : Nat
-  maxLen : Nat
+open Torque
 
 def kMaxFlatFastStackEntries : Nat := 4096
 
@@ -137,9 +68,5 @@ def Frame.cost (H : Heap) (f : Frame) : Nat := ArrayFlat.cost H f.depth (f.rest 
 
 def frameMeasure (H : Heap) (cur : Frame) (stack : List Frame) : Nat :=
   cur.cost H + (stack.map (Frame.cost H)).sum
-
-def blit (buf : List (Option Val)) (pos : Nat) (src : List (Option Val)) :
-    List (Option Val) :=
-  buf.take pos ++ src ++ buf.drop (pos + src.length)
 
 end ArrayFlat
