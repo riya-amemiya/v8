@@ -79,6 +79,20 @@ which `maglev-range-analysis.h` records only on the true branch of a strict
 removal of an unsigned `CheckInt32Condition` in the same optimizer relies on the
 same strictness.
 
+These two places are the only readers of `LessEqualConstraint`. The range
+analysis records it only for a `BranchIfInt32Compare` with `kLessThan`, on the
+true successor, which split-edge form gives a single predecessor. The constraint
+stays in that block, because `Join` copies ranges but not constraints, a query
+looks only at the current block, and a block spliced in after the analysis
+answers no. Both readers also require the ranges of both operands to lie in
+`Uint32`, which turns the signed `<` into the unsigned one, so they are only as
+sound as those ranges. `RangeProcessor` has an overload for
+`TruncateCheckedNumberOrOddballToInt32` that intersects the input range with
+`Int32`, which would give `[0, 2^31 - 1]` for an input in `[0, 3e9]` although
+`ToInt32(3e9)` is negative. That overload takes no `ProcessingState`, so the
+two-argument dispatch of `GraphProcessor` never selects it, and the generic
+overload gives the node the full `Int32` range instead.
+
 When the premise fails, both fast paths access memory outside a backing store
 in a release build. `TryFastFlat` copies a `PACKED_SMI_ELEMENTS` or
 `PACKED_DOUBLE_ELEMENTS` subarray with `TorqueCopyElements`, and `CopyElements`
