@@ -356,6 +356,8 @@ class ExceptionHandlerInfo;
   V(Phi)                                      \
   V(RegisterInput)                            \
   V(CheckedInternalizedString)                \
+  V(CheckedFloat64ToIndex)                    \
+  V(CheckedHoleyFloat64ToIndex)               \
   V(TruncateCheckedNumberAsSafeIntToInt32)    \
   V(TruncateUnsafeNumberAsSafeIntToInt32)     \
   V(TruncateFloat64AsSafeIntToInt32)          \
@@ -6986,6 +6988,8 @@ class AssertRangeInt32 : public FixedInputNodeT<1, AssertRangeInt32> {
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
   void PrintParams(std::ostream&) const;
 
+  auto options() const { return std::tuple{range_}; }
+
   Range range() const { return range_; }
 
  private:
@@ -7002,6 +7006,8 @@ class AssertRangeFloat64 : public FixedInputNodeT<1, AssertRangeFloat64> {
   void SetValueLocationConstraints();
   void GenerateCode(MaglevAssembler*, const ProcessingState&);
   void PrintParams(std::ostream&) const;
+
+  auto options() const { return std::tuple{range_}; }
 
   Range range() const { return range_; }
 
@@ -7887,6 +7893,29 @@ class CheckedObjectToIndex
  private:
   using CheckTypeBitField = NextBitField<CheckType, 1>;
 };
+
+// Converts a Float64 element index to Int32. Unlike CheckedFloat64ToInt32 this
+// accepts -0 and returns 0, so the result is not interchangeable with the
+// input and this is not a conversion node.
+#define DEFINE_FLOAT64_TO_INDEX_NODE(name, from_repr)               \
+  class name : public FixedInputValueNodeT<1, name> {               \
+   public:                                                          \
+    explicit name(uint64_t bitfield) : Base(bitfield) {}            \
+                                                                    \
+    static constexpr OpProperties kProperties =                     \
+        OpProperties::EagerDeopt() | OpProperties::Int32();         \
+    static_assert(!kProperties.is_conversion());                    \
+    DECLARE_INPUTS(Value)                                           \
+    DECLARE_INPUT_TYPES(from_repr)                                  \
+                                                                    \
+    Range range() const { return input_node(0)->GetStaticRange(); } \
+    void SetValueLocationConstraints();                             \
+    void GenerateCode(MaglevAssembler*, const ProcessingState&);    \
+  };
+
+DEFINE_FLOAT64_TO_INDEX_NODE(CheckedFloat64ToIndex, Float64)
+DEFINE_FLOAT64_TO_INDEX_NODE(CheckedHoleyFloat64ToIndex, HoleyFloat64)
+#undef DEFINE_FLOAT64_TO_INDEX_NODE
 
 class GetTemplateObject : public FixedInputValueNodeT<1, GetTemplateObject> {
  public:
