@@ -58,11 +58,26 @@ and `src/interpreter`, `JSCreateLowering::ReduceNewArray` in TurboFan, and
 writers read are `SetLengthImpl` in `src/objects/elements.cc`,
 `JSObject::AddDataElement`, both `BuildAppendJSArray` overloads,
 `ArrayPrototypePop`, the growing branch of `EmitElementStore`,
-`ArrayConcatVisitor::ToArray`, `StringToList` and `FastSplice`. Each of them
-allocates or grows the backing store before it raises the length, or only
-lowers the length. `BuildAppendJSArray` in `src/codegen/code-stub-assembler.cc`
-names another bug or in-sandbox memory corruption as the way a length above the
-backing store length arises.
+`ArrayConcatVisitor::ToArray`, `StringToList`, `FastSplice`, and in Maglev
+`TryReduceArrayPrototypePush`, `TryReduceArrayPrototypePop` and the growing
+keyed store of `TryBuildElementStoreOnJSArrayOrJSObject`, whose
+`UpdateJSArrayLength` Turbolev lowers to the Turboshaft operation of the same
+name. Each of them allocates or grows the backing store before it raises the
+length, or only lowers the length. `BuildAppendJSArray` in
+`src/codegen/code-stub-assembler.cc` names another bug or in-sandbox memory
+corruption as the way a length above the backing store length arises.
+
+`UpdateJSArrayLength` has one producer, the growing keyed store, where
+`MaybeGrowFastElements` runs first and either leaves a backing store longer than
+the index, through `TryGrowElementsCapacity` or `Runtime_GrowArrayElements`, or
+deoptimizes. Turboshaft gives `MaybeGrowFastElementsOp` the `CanCallAnything`
+effects, and no Turboshaft reducer other than its lowering rewrites it. The
+Maglev graph optimizer replaces `UpdateJSArrayLength` by its length input only
+when it shows `index < length`. One of its arguments is a `LessEqualConstraint`,
+which `maglev-range-analysis.h` records only on the true branch of a strict
+`<`, so the fact it carries is strict although the name says less or equal. The
+removal of an unsigned `CheckInt32Condition` in the same optimizer relies on the
+same strictness.
 
 When the premise fails, both fast paths access memory outside a backing store
 in a release build. `TryFastFlat` copies a `PACKED_SMI_ELEMENTS` or
