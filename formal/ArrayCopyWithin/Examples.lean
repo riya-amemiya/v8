@@ -38,6 +38,8 @@ def isUb : Result → Bool
 
 #guard isUb (tryFast r (mk .packedSmi (smis [1, 2, 3, 4, 5])) (-1) 0 1)
 
+#guard isUb (fastPath r ⟨.packedSmi, true, true, true, false, 3, []⟩ 3 ⟨0, 1, none⟩)
+
 #guard SmiRepr.above (r.add (2 ^ 30 - 1) (2 ^ 30 - 1)) (r.word 5) &&
   !r.greaterThan (r.add (2 ^ 30 - 1) (2 ^ 30 - 1)) (r.word 5)
 

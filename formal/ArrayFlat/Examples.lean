@@ -20,6 +20,10 @@ def isBailout : Outcome JSArr → Bool
   | .bailout => true
   | _ => false
 
+def isUb : Outcome JSArr → Bool
+  | .ub => true
+  | _ => false
+
 def nested : Heap := heapOf [
   mk .packedElem [some (.smi 1), some (.arr 1)],
   mk .packedElem [some (.smi 2), some (.arr 2)],
@@ -60,5 +64,11 @@ def withProxy : Heap := heapOf [mk .packedElem [some (.smi 1), some .proxy]]
 def shrunk : Heap := heapOf [mk .packedSmi [some (.smi 1)]]
 
 #guard isBailout (tryFastFlat v8Config shrunk 0 5 1)
+
+def longerThanStore : Heap := heapOf [
+  mk .packedElem [some (.arr 1)],
+  ⟨.packedSmi, true, true, true, false, 3, []⟩]
+
+#guard isUb (tryFastFlat v8Config longerThanStore 0 1 1)
 
 end ArrayFlat.Examples
