@@ -1266,7 +1266,8 @@ TNode<String> JSCallReducerAssembler::ReduceStringPrototypeCharAt(
   }
 
   DCHECK_EQ(speculation_mode, SpeculationMode::kAllowSpeculation);
-  TNode<Number> bounded_index = CheckBounds(index, length);
+  TNode<Number> bounded_index =
+      CheckBounds(index, length, CheckBoundsFlag::kSpeculativeBoundsCheck);
   return StringFromSingleCharCode(TNode<Number>::UncheckedCast(
       StringCharCodeAt(receiver_string, bounded_index)));
 }
@@ -1298,7 +1299,8 @@ TNode<Number> JSCallReducerAssembler::ReduceStringPrototypeCharCodeAt(
   }
   DCHECK_EQ(speculation_mode, SpeculationMode::kAllowSpeculation);
 
-  TNode<Number> bounded_index = CheckBounds(index, length);
+  TNode<Number> bounded_index =
+      CheckBounds(index, length, CheckBoundsFlag::kSpeculativeBoundsCheck);
   return TNode<Number>::UncheckedCast(
       (StringCharCodeAt(receiver_string, bounded_index)));
 }
@@ -3653,18 +3655,28 @@ Reduction JSCallReducer::ReduceObjectPrototypeHasOwnProperty(Node* node) {
   // is no observable side effect between the {JSForInNext} and the
   // {JSCall} to Object.prototype.hasOwnProperty.
   //
-  // Also note that it's safe to look through the {JSToObject}, since the
-  // Object.prototype.hasOwnProperty does an implicit ToObject anyway, and
-  // these operations are not observable.
+  // Looking through {JSToObject(receiver)} is only valid when {receiver} is a
+  // JSReceiver; for primitives, {JSToObject} allocates a distinct wrapper.
   if (name->opcode() == IrOpcode::kJSForInNext) {
     JSForInNextNode n(name);
     if (n.Parameters().mode() != ForInMode::kGeneric) {
       Node* object = n.receiver();
       Node* cache_type = n.cache_type();
-      if (object->opcode() == IrOpcode::kJSToObject) {
-        object = NodeProperties::GetValueInput(object, 0);
+      bool check_receiver = false;
+      if (object->opcode() == IrOpcode::kJSToObject &&
+          NodeProperties::GetValueInput(object, 0) == receiver) {
+        if (!NodeProperties::CanBePrimitive(broker(), receiver, effect)) {
+          object = receiver;
+        } else if (ToObjectModeOf(object->op()) == ToObjectMode::kForInOrWith) {
+          object = receiver;
+          check_receiver = true;
+        }
       }
       if (object == receiver) {
+        if (check_receiver) {
+          receiver = effect = graph()->NewNode(simplified()->CheckReceiver(),
+                                               receiver, effect, control);
+        }
         // No need to repeat the map check if we can prove that there's no
         // observable side effect between {effect} and {name].
         if (!NodeProperties::NoObservableSideEffectBetween(effect, name)) {
@@ -7752,8 +7764,10 @@ Reduction JSCallReducer::ReduceStringPrototypeStringCodePointAt(Node* node) {
 
   // TODO(olivf): Support SpeculationMode::kOutOfBands.
   // Check that the {index} is within range.
-  index = effect = graph()->NewNode(simplified()->CheckBounds(p.feedback()),
-                                    index, receiver_length, effect, control);
+  index = effect = graph()->NewNode(
+      simplified()->CheckBounds(p.feedback(),
+                                CheckBoundsFlag::kSpeculativeBoundsCheck),
+      index, receiver_length, effect, control);
 
   // Return the character from the {receiver} as single character string.
   Node* value = effect = graph()->NewNode(simplified()->StringCodePointAt(),

@@ -579,6 +579,12 @@ void MaglevReducer<BaseT>::UpdateRange(NodeT* node) {
 template <typename BaseT>
 std::optional<ValueNode*> MaglevReducer<BaseT>::TryGetConstantAlternative(
     ValueNode* node) {
+  // Constants already carry their value and must not return themselves as an
+  // alternative (callers recurse on the returned constant).
+  // TODO(victorgomes): Fold UnwrapForDeopt into Unwrap in a follow-up (today
+  // Unwrap unwraps identities, returned values, and conversions, but not
+  // single-input phis).
+  if (IsConstantNode(node->UnwrapForDeopt()->opcode())) return {};
   const NodeInfo* info = known_node_aspects().TryGetInfoFor(node);
   if (info) {
     if (auto c = info->alternative().checked_value()) {
@@ -735,7 +741,7 @@ MaybeAssignedFlag MaglevReducer<BaseT>::GetContextMaybeAssigned(
   int var_index = index - header_length;
   *mode = scope_info.ContextLocalMode(var_index);
   // The debugger may have mutated a kNotAssigned context slot at runtime.
-  if (broker()->isolate()->is_context_slot_not_assigned_unreliable()) {
+  if (broker()->is_context_slot_not_assigned_unreliable()) {
     return kMaybeAssigned;
   }
   return scope_info.ContextLocalMaybeAssignedFlag(var_index);
@@ -1352,12 +1358,12 @@ MaybeReduceResult MaglevReducer<BaseT>::TryReduceArrayPrototypeAt(
         ValueNode* index = GetValueOrZeroIfUndefined(args[0]);
         if (!index->Is<Int32Constant>() ||
             index->Cast<Int32Constant>()->value() != 0) {
+          ValueNode* zero = GetInt32Constant(0);
           GET_VALUE_OR_ABORT(index,
-                             Select(
+                             SelectInt32(
                                  [&](auto& branch) -> BranchResult {
-                                   return BuildBranchIfInt32Compare(
-                                       branch, Operation::kLessThan, index,
-                                       GetInt32Constant(0));
+                                   return BuildBranchIfInt32LessThan(
+                                       branch, &index, &zero);
                                  },
                                  [&]() -> ReduceResult {
                                    return AddNewNode<Int32Add>({index, length});
@@ -2276,8 +2282,7 @@ bool MaglevReducer<BaseT>::CanInlineCall(
     TRACE_CANNOT_INLINE("stack overflow");
     return false;
   }
-  if (static_cast<int>(graph()->inlined_functions().size()) >=
-      SourcePosition::MaxInliningId()) {
+  if (graph()->HasReachedMaxInliningId()) {
     graph()->compilation_info()->set_could_not_inline_all_candidates();
     TRACE_CANNOT_INLINE("maximum inlining ids");
     return false;
@@ -2471,6 +2476,11 @@ void MaglevReducer<BaseT>::SetKnownValue(ValueNode* node,
                                          NodeType new_node_type) {
   DCHECK(!node->Is<HeapConstant>());
   DCHECK(!node->Is<RootConstant>());
+  // Constants already carry their value and must not attach a checked_value
+  // alternative (TryGetConstantAlternative ignores constants, so repeated
+  // checks would otherwise overwrite checked_value).
+  // TODO(victorgomes): Fold UnwrapForDeopt into Unwrap in a follow-up.
+  if (IsConstantNode(node->UnwrapForDeopt()->opcode())) return;
   NodeInfo* known_info = GetOrCreateInfoFor(node);
   // ref type should be compatible with type.
   DCHECK(NodeTypeIs(StaticTypeForConstant(broker(), ref), new_node_type));
@@ -4427,9 +4437,36 @@ template <typename CondFn>
 ReduceResult MaglevReducer<BaseT>::Select(
     CondFn cond, base::FunctionRef<ReduceResult()> if_true,
     base::FunctionRef<ReduceResult()> if_false) {
+  return SelectImpl(cond, if_true, if_false,
+                    [](ValueNode* value) -> ReduceResult { return value; });
+}
+
+template <typename BaseT>
+template <typename CondFn>
+ReduceResult MaglevReducer<BaseT>::SelectInt32(
+    CondFn cond, base::FunctionRef<ReduceResult()> if_true,
+    base::FunctionRef<ReduceResult()> if_false) {
+  return SelectImpl(cond, if_true, if_false,
+                    [&](ValueNode* value) -> ReduceResult {
+                      return GetInt32(value, /*can_be_heap_number=*/true);
+                    });
+}
+
+template <typename BaseT>
+template <typename CondFn, typename FinishFn>
+ReduceResult MaglevReducer<BaseT>::SelectImpl(
+    CondFn cond, base::FunctionRef<ReduceResult()> if_true,
+    base::FunctionRef<ReduceResult()> if_false, FinishFn finish) {
   Subgraph<BaseT> sg(this, /*variable_count=*/1);
   using Variable = typename Subgraph<BaseT>::Variable;
   using Label = typename Subgraph<BaseT>::Label;
+
+  // `finish` must run before `sg` is destroyed, so that its nodes and known
+  // node aspects belong to the subgraph.
+  auto finish_arm = [&](ReduceResult result) -> ReduceResult {
+    if (!result.IsDoneWithValue()) return result;
+    return finish(result.value());
+  };
 
   Label else_branch(&sg, /*predecessor_count=*/1);
 
@@ -4439,9 +4476,9 @@ ReduceResult MaglevReducer<BaseT>::Select(
     case BranchResult::kAbort:
       return ReduceResult::DoneWithAbort();
     case BranchResult::kAlwaysTrue:
-      return if_true();
+      return finish_arm(if_true());
     case BranchResult::kAlwaysFalse:
-      return if_false();
+      return finish_arm(if_false());
     case BranchResult::kDefault:
       break;
   }
@@ -4463,7 +4500,7 @@ ReduceResult MaglevReducer<BaseT>::Select(
   sg.GotoOrTrim(&done);
 
   RETURN_IF_ABORT(sg.TrimPredecessorsAndBind(&done));
-  return sg.get(v);
+  return finish(sg.get(v));
 }
 
 template <typename BaseT>
@@ -4492,6 +4529,23 @@ BranchResult MaglevReducer<BaseT>::BuildBranchIfInt32Compare(BranchBuilder& b,
     }
   }
   return b.template Build<BranchIfInt32Compare>({lhs, rhs}, op);
+}
+
+template <typename BaseT>
+BranchResult MaglevReducer<BaseT>::BuildBranchIfInt32LessThan(BranchBuilder& b,
+                                                              ValueNode** lhs,
+                                                              ValueNode** rhs) {
+  // The conversions are emitted here rather than by the caller, so that they
+  // are part of the subgraph that the branch belongs to.
+  // TODO(jgruber): Convert in the caller once Subgraph splicing saves and
+  // restores the known node aspects correctly.
+  ReduceResult int32_lhs = GetInt32(*lhs);
+  if (int32_lhs.IsDoneWithAbort()) return BranchResult::kAbort;
+  ReduceResult int32_rhs = GetInt32(*rhs);
+  if (int32_rhs.IsDoneWithAbort()) return BranchResult::kAbort;
+  *lhs = int32_lhs.value();
+  *rhs = int32_rhs.value();
+  return BuildBranchIfInt32Compare(b, Operation::kLessThan, *lhs, *rhs);
 }
 
 template <typename BaseT>
@@ -4654,9 +4708,9 @@ ReduceResult MaglevReducer<BaseT>::BuildInt32Max(ValueNode* a, ValueNode* b) {
       return GetInt32Constant(std::max(*cl, *cr));
     }
   }
-  return Select(
+  return SelectInt32(
       [&](auto& branch) -> BranchResult {
-        return BuildBranchIfInt32Compare(branch, Operation::kLessThan, a, b);
+        return BuildBranchIfInt32LessThan(branch, &a, &b);
       },
       [&]() -> ReduceResult { return b; }, [&]() -> ReduceResult { return a; });
 }
@@ -4668,9 +4722,9 @@ ReduceResult MaglevReducer<BaseT>::BuildInt32Min(ValueNode* a, ValueNode* b) {
       return GetInt32Constant(std::min(*cl, *cr));
     }
   }
-  return Select(
+  return SelectInt32(
       [&](auto& branch) -> BranchResult {
-        return BuildBranchIfInt32Compare(branch, Operation::kLessThan, a, b);
+        return BuildBranchIfInt32LessThan(branch, &a, &b);
       },
       [&]() -> ReduceResult { return a; }, [&]() -> ReduceResult { return b; });
 }
@@ -7261,7 +7315,7 @@ MaybeReduceResult MaglevReducer<BaseT>::TryReduceStringPrototypeCharAt(
   DCHECK_EQ(current_speculation_mode_, SpeculationMode::kAllowSpeculation);
   RETURN_IF_ABORT(TryBuildCheckInt32Condition(
       index, length, AssertCondition::kUnsignedLessThan,
-      DeoptimizeReason::kOutOfBounds));
+      DeoptimizeReason::kSpeculativeBoundsCheckFailed));
   return GetCharAt();
 }
 
@@ -7315,9 +7369,10 @@ MaybeReduceResult MaglevReducer<BaseT>::TryReduceStringPrototypeCharCodeAt(
         });
   }
 
+  DCHECK_EQ(current_speculation_mode_, SpeculationMode::kAllowSpeculation);
   RETURN_IF_ABORT(TryBuildCheckInt32Condition(
       index, length, AssertCondition::kUnsignedLessThan,
-      DeoptimizeReason::kOutOfBounds));
+      DeoptimizeReason::kSpeculativeBoundsCheckFailed));
   return BuildGetCharCodeAt(receiver, index);
 }
 
@@ -7364,9 +7419,10 @@ MaybeReduceResult MaglevReducer<BaseT>::TryReduceStringPrototypeCodePointAt(
         });
   }
 
+  DCHECK_EQ(current_speculation_mode_, SpeculationMode::kAllowSpeculation);
   RETURN_IF_ABORT(TryBuildCheckInt32Condition(
       index, length, AssertCondition::kUnsignedLessThan,
-      DeoptimizeReason::kOutOfBounds));
+      DeoptimizeReason::kSpeculativeBoundsCheckFailed));
   return GetCodePointAt();
 }
 

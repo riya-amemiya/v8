@@ -21,6 +21,7 @@
 #include "experimental/redline/base/time_util.h"
 #include "experimental/redline/base/v8_runtime.h"
 #include "experimental/redline/core/environment.h"
+#include "experimental/redline/core/tunable.h"
 #include "experimental/redline/engine/d8_flags.h"
 #include "experimental/redline/engine/flag_minimizer.h"
 #include "experimental/redline/engine/importer.h"
@@ -33,6 +34,10 @@
 #include "experimental/redline/mutators/explore.h"
 
 namespace redline {
+
+REDLINE_TUNABLE(kExploreTimeoutFactor, "explore.timeout_factor", 4, 1, 16,
+                "timeout of the instrumented run of a runtime-assisted "
+                "mutator, as a multiple of the target timeout");
 
 namespace {
 
@@ -119,6 +124,11 @@ std::string AbsolutePath(const std::string& path) {
 
 uint64_t CrashRerunTimeout(const FuzzConfig& config) {
   return static_cast<uint64_t>(config.crash_rerun_timeout_factor *
+                               static_cast<double>(config.target.timeout_us));
+}
+
+uint64_t InstrumentedRunTimeout(const FuzzConfig& config) {
+  return static_cast<uint64_t>(kExploreTimeoutFactor() *
                                static_cast<double>(config.target.timeout_us));
 }
 
@@ -517,18 +527,46 @@ class Worker {
   // --- execution --------------------------------------------------------
 
   // The script that the target runs for `source`: the prelude, then the
-  // program.
-  std::string ScriptFor(const std::string& source) const {
-    const std::string& prelude = config().prelude;
-    if (prelude.empty()) {
-      return source;
-    }
-    std::string script;
-    script.reserve(prelude.size() + 1 + source.size());
-    script.append(prelude).append("\n").append(source);
-    return script;
+  // program. With the tunable `prelude.on_demand`, the script has only the
+  // part of the prelude for `source`, and `selection` gets this part. Each
+  // run of the same source gets the same script.
+  std::string ScriptFor(const std::string& source,
+                        OnDemandPrelude::Selection* selection = nullptr) const {
+    return ScriptWithPrelude(
+        config().prelude, fuzzer_->on_demand_prelude_.get(), source, selection);
   }
 
+  // The line of the crash report for a program that ran behind a part of
+  // the prelude (the tunable `prelude.on_demand`). Empty without the
+  // tunable. The line gives the value of the tunable, because
+  // `redline minimize` needs the same value for NAME.js.
+  std::string PreludeReportLine(const std::string& source) const {
+    const OnDemandPrelude* on_demand = fuzzer_->on_demand_prelude_.get();
+    if (on_demand == nullptr) {
+      return "";
+    }
+    return StringPrintf(
+        "prelude: on demand (prelude.on_demand=%d), %zu of %zu statements\n",
+        on_demand->fallback_rules() ? 1 : 2, on_demand->Select(source).count,
+        on_demand->statements());
+  }
+
+  // The text that ScriptFor() puts in front of `source`.
+  std::string PreludeFor(const std::string& source) const {
+    const OnDemandPrelude* on_demand = fuzzer_->on_demand_prelude_.get();
+    return on_demand == nullptr ? config().prelude
+                                : on_demand->Text(on_demand->Select(source));
+  }
+
+  // The number of lines that ScriptFor() puts in front of line 1 of `source`.
+  int PreludeLinesFor(const std::string& source) const {
+    const OnDemandPrelude* on_demand = fuzzer_->on_demand_prelude_.get();
+    return on_demand == nullptr ? prelude_lines_
+                                : on_demand->Select(source).lines;
+  }
+
+  // The size of the script with the whole prelude. With the tunable
+  // `prelude.on_demand`, the script of ScriptFor() can be smaller.
   size_t ScriptSize(const std::string& source) const {
     const std::string& prelude = config().prelude;
     return prelude.empty() ? source.size() : prelude.size() + 1 + source.size();
@@ -538,11 +576,18 @@ class Worker {
   // bookkeeping. Returns false on an infrastructure failure.
   bool Execute(const std::string& source, Execution* execution,
                uint64_t timeout_us = 0) {
-    const bool ok = config().prelude.empty()
-                        ? RunScript(source, execution, timeout_us)
-                        : RunScript(ScriptFor(source), execution, timeout_us);
+    OnDemandPrelude::Selection selection;
+    const bool ok =
+        config().prelude.empty()
+            ? RunScript(source, execution, timeout_us)
+            : RunScript(ScriptFor(source, &selection), execution, timeout_us);
     if (ok) {
       RememberExecution(source);
+      if (fuzzer_->on_demand_prelude_ != nullptr) {
+        stats().prelude_scripts++;
+        stats().prelude_statements += selection.count;
+        stats().prelude_fallbacks[static_cast<int>(selection.fallback)]++;
+      }
     }
     return ok;
   }
@@ -1432,7 +1477,7 @@ class Worker {
           rng_.Chance(SalvageChance())) {
         // Wrap the throwing statement once and rerun the mutant.
         const ExceptionLines lines =
-            ExtractExceptionLines(execution, prelude_lines_);
+            ExtractExceptionLines(execution, PreludeLinesFor(source));
         // A throw directly in the last top-level statement leaves no code
         // for a wrap to run. Without new edges in the failed run, the
         // worker does not run the retry.
@@ -1709,12 +1754,14 @@ class Worker {
       mutator.stats().invalid++;
       return false;
     }
-    // Fuzzilli runs the instrumented program at 4 times the timeout.
+    // Fuzzilli runs the instrumented program at 4 times the timeout. This is
+    // the default of the tunable `explore.timeout_factor`.
     Execution execution;
-    if (!Execute(instrumented, &execution, 4 * config().target.timeout_us)) {
+    if (!Execute(instrumented, &execution, InstrumentedRunTimeout(config()))) {
       return false;
     }
     stats().explore_executions++;
+    stats().explore_exec_time_us += execution.exec_time_us;
     stage(Stage::kMutate).executions++;
     stage(Stage::kMutate).exec_time_us += execution.exec_time_us;
     if (execution.crashed()) {
@@ -2237,7 +2284,7 @@ class Worker {
     // (the text of NAME.repro.js after its header). Empty if there is none.
     std::string repro;
     // The program part of `repro` also crashed with the signature behind
-    // the full prelude. Then NAME.js has this program.
+    // its prelude (ScriptFor). Then NAME.js has this program.
     bool program_verified = false;
     std::string repro_path;  // empty if Redline did not write NAME.repro.js
     size_t repro_bytes = 0;
@@ -2592,7 +2639,8 @@ class Worker {
     info->min_tree = "program alone: the prelude is empty";
     if (!config().prelude.empty()) {
       std::string error;
-      script = ScriptTree::Parse(config().prelude, source, &error);
+      // The tree has the prelude of the script that crashed.
+      script = ScriptTree::Parse(PreludeFor(source), source, &error);
       if (script == nullptr) {
         // The report has one line for the reason.
         std::replace(error.begin(), error.end(), '\n', ' ');
@@ -2678,7 +2726,7 @@ class Worker {
     // MinimizeReproFlags can remove flags later.
     info->repro_flags = CurrentTarget().args;
     info->repro_flags_note = "all flags of the test, no search";
-    // NAME.js keeps the program alone, which runs behind the full prelude.
+    // NAME.js keeps the program alone, which runs behind its prelude.
     const std::string reduced = script->PrintProgram();
     info->program_verified = verified(reduced, /*is_script=*/false);
     if (!info->program_verified) {
@@ -2844,8 +2892,9 @@ class Worker {
     const std::string& text =
         info->amplify.program.empty() ? source : info->amplify.program;
     std::string error;
+    // The amplify step ran its program behind the prelude of `source`.
     std::unique_ptr<ScriptTree> script =
-        ScriptTree::Parse(config().prelude, text, &error);
+        ScriptTree::Parse(PreludeFor(source), text, &error);
     if (script == nullptr) {
       // The report has one line for the reason.
       std::replace(error.begin(), error.end(), '\n', ' ');
@@ -3371,7 +3420,7 @@ class Worker {
       AmplifyRequest request;
       request.target = CurrentTarget();
       request.program = source;
-      request.prelude = config().prelude;
+      request.prelude = PreludeFor(source);
       request.script_path = StringPrintf("%s/crashes/amplify_%016llx.js",
                                          config().out_dir.c_str(),
                                          static_cast<unsigned long long>(hash));
@@ -3618,7 +3667,7 @@ class Worker {
         "history_replayed: %s\nstate_dependent: %s\nhistory_needed: %zu of "
         "%zu\n"
         "minimized: %s (%d tests, %zu -> %zu nodes)\n%sd8_random_args: %s\n"
-        "%s%s\n--- stderr "
+        "%s%s%s\n--- stderr "
         "---\n%s\n--- stdout ---\n%s\n"
         "--- fuzzout ---\n%s\n",
         execution.signal, execution.exit_code, info.signature.text.c_str(),
@@ -3629,6 +3678,7 @@ class Worker {
         info.minimized ? "yes" : "no", info.minimization.tests,
         info.minimization.nodes_before, info.minimization.nodes_after,
         MinimizationReportLines(info).c_str(), RandomArgsText().c_str(),
+        PreludeReportLine(source).c_str(),
         AmplifyReportLines(info, amplified_program).c_str(),
         BundleReportLines(info).c_str(),
         Truncate(execution.stderr_output, kMaxSavedOutput).c_str(),
@@ -3770,6 +3820,7 @@ bool Fuzzer::Initialize(std::string* error) {
   corpus_ = std::make_unique<Corpus>(std::move(seeds), std::move(partners));
   mutators_ = MutatorSet::CreateDefault();
   generators_ = GeneratorSet::CreateDefault();
+  on_demand_prelude_ = MakeOnDemandPrelude(config_.prelude);
   minimizer_ = std::make_unique<Minimizer>(config_.minimizer);
   for (const std::string& name : config_.minimizer_reducers) {
     minimizer_reducers_.push_back(
@@ -4604,6 +4655,7 @@ void Fuzzer::WriteStatsEvent() {
   event.Add("explore_applied", stats_.explore_applied.load());
   event.Add("noop_retries", stats_.noop_retries.load());
   event.Add("explore_timeouts", stats_.explore_timeouts.load());
+  event.Add("explore_exec_time_us", stats_.explore_exec_time_us.load());
   uint64_t salvage_ok = stats_.salvage_succeeded.load();
   uint64_t salvage_att = stats_.salvage_attempted.load();
   event.Add("salvage_attempted", salvage_att);
@@ -4620,6 +4672,17 @@ void Fuzzer::WriteStatsEvent() {
   event.Add("infrastructure_failures", stats_.infrastructure_failures.load());
   if (config_.selection.swarm) {
     event.Add("swarm_epochs", stats_.swarm_epochs.load());
+  }
+  if (on_demand_prelude_ != nullptr) {
+    event.Add("prelude_scripts", stats_.prelude_scripts.load());
+    event.Add("prelude_statements", stats_.prelude_statements.load());
+    event.Add("prelude_total_statements",
+              static_cast<uint64_t>(on_demand_prelude_->statements()));
+    for (int i = 1; i < kNumPreludeFallbacks; i++) {
+      event.Add(std::string("prelude_whole_") +
+                    PreludeFallbackName(static_cast<PreludeFallback>(i)),
+                stats_.prelude_fallbacks[i].load());
+    }
   }
   if (config_.randomize_d8_flags) {
     event.Add("flag_draws", flag_draws_.load());

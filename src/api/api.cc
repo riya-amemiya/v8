@@ -350,7 +350,7 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
   }
 
   void* AllocateUninitialized(size_t length) override {
-    return Allocate(length);
+    return allocator_->AllocateUninitialized(length);
   }
 
   void Free(void* data, size_t length) override {
@@ -5064,7 +5064,17 @@ Maybe<bool> SetPrototypeImpl(v8::Object* this_, Local<Context> context,
     // Convert Just(false) to Just(true).
     return Just(true);
   }
-  // Wasm object or other kind of special object not supported here.
+#if V8_ENABLE_WEBASSEMBLY
+  if (i::IsWasmObject(*self)) {
+    EnterV8NoScriptNoExceptionScope api_scope(i_isolate);
+    auto result = i::JSReceiver::SetPrototype(i_isolate, self, value_obj,
+                                              from_javascript, i::kDontThrow);
+    // Convert Just(false) to Nothing.
+    if (!result.FromJust()) return {};
+    return result;
+  }
+#endif  // V8_ENABLE_WEBASSEMBLY
+  // Other kind of special object not supported here.
   return {};
 }
 

@@ -840,9 +840,14 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
       FieldOperand(rdx, offsetof(JSGeneratorObject, input_or_debug_pos_)), rax);
   Register object = WriteBarrierDescriptor::ObjectRegister();
   __ Move(object, rdx);
+  // 16-byte stack alignment: this builtin is frameless and callers call it with
+  // an aligned rsp, so the single return address slot leaves rsp at 8 mod 16.
+  // Pad it for the RecordWrite builtin call.
+  if constexpr (ShouldPadArguments(1)) __ PushTaggedStackPadding();
   __ RecordWriteField(object, offsetof(JSGeneratorObject, input_or_debug_pos_),
                       rax, WriteBarrierDescriptor::SlotAddressRegister(),
                       SaveFPRegsMode::kIgnore);
+  if constexpr (ShouldPadArguments(1)) __ DropStackPadding();
   // Check that rdx is still valid, RecordWrite might have clobbered it.
   __ AssertGeneratorObject(rdx);
 
@@ -903,9 +908,16 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
     __ cmpl(argc, Immediate(JSParameterCount(0)));
     __ j(kGreaterThan, &push_arguments, Label::kNear);
     __ movl(argc, Immediate(JSParameterCount(0)));
+    // 16-byte stack alignment: only the receiver is pushed, so pad it.
+    if constexpr (ShouldPadArguments(JSParameterCount(0))) {
+      __ PushTaggedStackPadding();
+    }
     __ jmp(&done_loop, Label::kNear);
 
     __ bind(&push_arguments);
+    // 16-byte stack alignment: the parameters plus the receiver are {argc}
+    // slots in total, so pad them to an even number of slots.
+    PushArgumentPaddingForArgc(masm, argc);
     __ LoadTaggedField(params_array,
                        FieldOperand(rdx, offsetof(JSGeneratorObject,
                                                   parameters_and_registers_)));
@@ -965,10 +977,14 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ Push(rdx);
+    // 16-byte stack alignment: pad the single saved slot. The two runtime
+    // arguments below need no padding.
+    if constexpr (ShouldPadArguments(1)) __ PushTaggedStackPadding();
     __ Push(rdi);
     // Push hole as receiver since we do not use it for stepping.
     __ PushRoot(RootIndex::kTheHoleValue);
     __ CallRuntime(Runtime::kDebugOnFunctionCall);
+    if constexpr (ShouldPadArguments(1)) __ DropStackPadding();
     __ Pop(rdx);
     __ LoadTaggedField(
         rdi, FieldOperand(rdx, offsetof(JSGeneratorObject, function_)));
@@ -979,7 +995,10 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ Push(rdx);
+    // 16-byte stack alignment: pad the single saved slot.
+    if constexpr (ShouldPadArguments(1)) __ PushTaggedStackPadding();
     __ CallRuntime(Runtime::kDebugPrepareStepInSuspendedGenerator);
+    if constexpr (ShouldPadArguments(1)) __ DropStackPadding();
     __ Pop(rdx);
     __ LoadTaggedField(
         rdi, FieldOperand(rdx, offsetof(JSGeneratorObject, function_)));
@@ -2089,8 +2108,19 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
 #ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
       __ PushDispatchHandle(kJavaScriptCallDispatchHandleRegister, rcx);
 #endif
-      __ Push(closure);
+      // 16-byte stack alignment: as in the stack guard path below, pad the
+      // saved slots to an even number; PushArgument pads the single runtime
+      // argument. We can't eliminate the double padding when kSavedSlots is odd
+      // because the callee (CEntry) will always drop one padding slot alongside
+      // the single argument.
+      constexpr int kSavedSlots =
+          1 + (V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE_BOOL ? 1 : 0);
+      if constexpr (ShouldPadArguments(kSavedSlots)) {
+        __ PushTaggedStackPadding();
+      }
+      __ PushArgument(closure);
       __ CallRuntime(Runtime::kBytecodeBudgetInterrupt_Sparkplug, 1);
+      if constexpr (ShouldPadArguments(kSavedSlots)) __ DropStackPadding();
 #ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
       __ PopDispatchHandle(kJavaScriptCallDispatchHandleRegister, rcx);
 #endif
@@ -2115,9 +2145,22 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
 #ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
       __ PushDispatchHandle(kJavaScriptCallDispatchHandleRegister, rcx);
 #endif
+      // 16-byte stack alignment: the baseline frame header (rbp plus six
+      // slots) and the re-pushed return address leave rsp at 8 mod 16 here,
+      // just like on entry of a regular call, so the INTERNAL frame starts
+      // aligned. Pad the saved slots to an even number; PushArgument pads the
+      // single runtime argument. We can't eliminate the double padding when
+      // kSavedSlots is odd because the callee (CEntry) will always drop one
+      // padding slot alongside the single argument.
+      constexpr int kSavedSlots =
+          1 + (V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE_BOOL ? 1 : 0);
+      if constexpr (ShouldPadArguments(kSavedSlots)) {
+        __ PushTaggedStackPadding();
+      }
       __ SmiTag(frame_size);
-      __ Push(frame_size);
+      __ PushArgument(frame_size);
       __ CallRuntime(Runtime::kStackGuardWithGap, 1);
+      if constexpr (ShouldPadArguments(kSavedSlots)) __ DropStackPadding();
 #ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
       __ PopDispatchHandle(kJavaScriptCallDispatchHandleRegister, rcx);
 #endif
@@ -2168,6 +2211,16 @@ void Generate_ContinueToBuiltinHelper(MacroAssembler* masm,
   ASM_CODE_COMMENT(masm);
   const RegisterConfiguration* config(RegisterConfiguration::Default());
   int allocatable_register_count = config->num_allocatable_general_registers();
+  // The deoptimizer pushes padding slots below the saved registers to keep the
+  // frame 16-byte aligned (16-byte stack alignment only, and only when the
+  // number of allocatable registers makes the frame odd). Drop them first so
+  // that rsp points at the saved registers.
+  const int padding_slot_count =
+      BuiltinContinuationFrameConstants::PaddingSlotCount(
+          allocatable_register_count);
+  if (padding_slot_count > 0) {
+    __ leaq(rsp, Operand(rsp, padding_slot_count * kSystemPointerSize));
+  }
   if (with_result) {
     if (javascript_builtin) {
       // kScratchRegister is not included in the allocateable registers.
@@ -2796,7 +2849,7 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
     {
       FrameScope scope(masm, StackFrame::MANUAL);
       __ EnterFrame(StackFrame::INTERNAL);
-      __ Push(rdx);
+      __ PushArgument(rdx);
       __ CallRuntime(Runtime::kThrowNotConstructor);
     }
     __ bind(&new_target_constructor);
@@ -2878,20 +2931,23 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
       (DEBUG_BOOL || V8_X64_16BYTE_STACK_ALIGNMENT_BOOL) ? Label::kFar
                                                          : Label::kNear;
 
-  __ LoadTaggedField(
-      rdx, FieldOperand(rdi, offsetof(JSFunction, shared_function_info_)));
-  // ----------- S t a t e -------------
-  //  -- rax : the number of arguments
-  //  -- rdx : the shared function info.
-  //  -- rdi : the function to call (checked to be a JSFunction)
-  // -----------------------------------
-
   // Enter the context of the function; ToObject has to run in the function
   // context, and we also need to take the global proxy from the function
   // context in case of conversion.
   __ LoadTaggedField(rsi, FieldOperand(rdi, offsetof(JSFunction, context_)));
-  // We need to convert the receiver for non-native sloppy mode functions.
   Label done_convert;
+  if (mode != ConvertReceiverMode::kNullOrUndefined) {
+    // JSReceivers never need conversion, so only look at the callee's
+    // language mode for primitive receivers.
+    Label receiver_is_primitive;
+    __ movq(rcx, args.GetReceiverOperand());
+    __ JumpIfSmi(rcx, &receiver_is_primitive, kConvertJumpDistance);
+    __ JumpIfJSAnyIsNotPrimitive(rcx, rbx, &done_convert);
+    __ bind(&receiver_is_primitive);
+  }
+  // We need to convert the receiver for non-native sloppy mode functions.
+  __ LoadTaggedField(
+      rdx, FieldOperand(rdi, offsetof(JSFunction, shared_function_info_)));
   __ testl(FieldOperand(rdx, offsetof(SharedFunctionInfo, flags_)),
            Immediate(SharedFunctionInfo::Flags::IsNativeBit::kMask |
                      SharedFunctionInfo::Flags::IsStrictBit::kMask));
@@ -2899,7 +2955,7 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
   {
     // ----------- S t a t e -------------
     //  -- rax : the number of arguments
-    //  -- rdx : the shared function info.
+    //  -- rcx : the receiver (a primitive, unless mode is kNullOrUndefined).
     //  -- rdi : the function to call (checked to be a JSFunction)
     //  -- rsi : the function context.
     // -----------------------------------
@@ -2909,10 +2965,6 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
       __ LoadGlobalProxy(rcx);
     } else {
       Label convert_to_object, convert_receiver;
-      __ movq(rcx, args.GetReceiverOperand());
-      __ JumpIfSmi(rcx, &convert_to_object, kConvertJumpDistance);
-      __ JumpIfJSAnyIsNotPrimitive(rcx, rbx, &done_convert,
-                                   kConvertJumpDistance);
       if (mode != ConvertReceiverMode::kNotNullOrUndefined) {
         Label convert_global_proxy;
         __ JumpIfRoot(rcx, RootIndex::kUndefinedValue, &convert_global_proxy,
@@ -2951,8 +3003,6 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
         __ Pop(rax);
         __ SmiUntagUnsigned(rax);
       }
-      __ LoadTaggedField(
-          rdx, FieldOperand(rdi, offsetof(JSFunction, shared_function_info_)));
       __ bind(&convert_receiver);
     }
     __ movq(args.GetReceiverOperand(), rcx);
@@ -2961,7 +3011,6 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
 
   // ----------- S t a t e -------------
   //  -- rax : the number of arguments
-  //  -- rdx : the shared function info.
   //  -- rdi : the function to call (checked to be a JSFunction)
   //  -- rsi : the function context.
   // -----------------------------------
@@ -3280,8 +3329,11 @@ void OnStackReplacement(MacroAssembler* masm, OsrSourceTier source,
     FrameScope scope(masm, StackFrame::INTERNAL);
     // Preserve arguments
     __ Push(expected_param_count);
+    // 16-byte stack alignment: pad the single saved slot.
+    if constexpr (ShouldPadArguments(1)) __ PushTaggedStackPadding();
     __ CallRuntime(Runtime::kCompileOptimizedOSR);
     DCHECK_EQ(maybe_target_code, rax);
+    if constexpr (ShouldPadArguments(1)) __ DropStackPadding();
     __ Pop(expected_param_count);
   }
 
@@ -3402,10 +3454,13 @@ void Builtins::Generate_MaglevFunctionEntryStackCheck(MacroAssembler* masm,
             kJavaScriptCallNewTargetRegister);
       }
       __ Push(kJavaScriptCallNewTargetRegister);
+      if constexpr (ShouldPadArguments(1)) __ PushTaggedStackPadding();
     }
-    __ Push(rax);
+    // PushArgument pads the single runtime argument.
+    __ PushArgument(rax);
     __ CallRuntime(Runtime::kStackGuardWithGap, 1);
     if (save_new_target) {
+      if constexpr (ShouldPadArguments(1)) __ DropStackPadding();
       __ Pop(kJavaScriptCallNewTargetRegister);
     }
   }
@@ -3790,6 +3845,21 @@ void LoadJumpBuffer(MacroAssembler* masm, Register stack, bool load_pc) {
     __ jmp(MemOperand(stack, wasm::kStackPcOffset));
   }
   // The stack limit is set separately under the ExecutionAccess lock.
+}
+
+// Returns from the frameless tail of a stack-switching WasmFX builtin (see
+// {Builtins::BypassesReturnAddressPrediction}).
+void ReturnFromStackSwitchingBuiltin(MacroAssembler* masm, Builtin builtin,
+                                     int bytes_to_drop) {
+  if (Builtins::BypassesReturnAddressPrediction(builtin)) {
+    // The caller did not push a return address prediction, so do not consume
+    // one: return via an indirect jump instead of a {ret}.
+    __ PopReturnAddressTo(kScratchRegister);
+    if (bytes_to_drop != 0) __ addq(rsp, Immediate(bytes_to_drop));
+    __ jmp(kScratchRegister);
+  } else {
+    __ ret(bytes_to_drop);
+  }
 }
 
 // The sp saved in a stack's jump buffer is always 16-byte aligned: SwitchStacks
@@ -4527,7 +4597,7 @@ void Builtins::Generate_WasmFXResume(MacroAssembler* masm) {
   // Return the arg buffer.
   __ movq(kReturnRegister0, WasmFXReturnDescriptor::GetRegisterParameter(0));
   __ LeaveFrame(StackFrame::WASM_STACK_EXIT);
-  __ ret(0);
+  ReturnFromStackSwitchingBuiltin(masm, Builtin::kWasmFXResume, 0);
 }
 
 void Builtins::Generate_WasmFXResumeThrow(MacroAssembler* masm) {
@@ -4586,7 +4656,8 @@ void Builtins::Generate_WasmFXResumeThrow(MacroAssembler* masm) {
   // Return the arg buffer.
   __ Move(kReturnRegister0, WasmFXReturnDescriptor::GetRegisterParameter(0));
   __ LeaveFrame(StackFrame::WASM_STACK_EXIT);
-  __ ret(0);
+  static_assert(WasmFXResumeThrowDescriptor::GetStackParameterCount() == 0);
+  ReturnFromStackSwitchingBuiltin(masm, Builtin::kWasmFXResumeThrow, 0);
 }
 
 void Builtins::Generate_WasmFXResumeThrowRef(MacroAssembler* masm) {
@@ -4633,7 +4704,8 @@ void Builtins::Generate_WasmFXResumeThrowRef(MacroAssembler* masm) {
   // Return the arg buffer.
   __ Move(kReturnRegister0, WasmFXReturnDescriptor::GetRegisterParameter(0));
   __ LeaveFrame(StackFrame::WASM_STACK_EXIT);
-  __ ret(0);
+  static_assert(WasmFXResumeThrowRefDescriptor::GetStackParameterCount() == 0);
+  ReturnFromStackSwitchingBuiltin(masm, Builtin::kWasmFXResumeThrowRef, 0);
 }
 
 void Builtins::Generate_WasmFXSuspend(MacroAssembler* masm) {
@@ -4691,9 +4763,11 @@ void Builtins::Generate_WasmFXSuspend(MacroAssembler* masm) {
   __ endbr64();
   __ Move(kReturnRegister0, WasmFXResumeDescriptor::GetRegisterParameter(1));
   __ LeaveFrame(StackFrame::WASM_STACK_EXIT);
-  __ ret(AddArgumentPaddingSlots(
-             WasmFXSuspendDescriptor::GetStackParameterCount()) *
-         kSystemPointerSize);
+  ReturnFromStackSwitchingBuiltin(
+      masm, Builtin::kWasmFXSuspend,
+      AddArgumentPaddingSlots(
+          WasmFXSuspendDescriptor::GetStackParameterCount()) *
+          kSystemPointerSize);
 }
 
 void Builtins::Generate_WasmFXSwitch(MacroAssembler* masm) {
@@ -4758,9 +4832,11 @@ void Builtins::Generate_WasmFXSwitch(MacroAssembler* masm) {
   __ endbr64();
   __ Move(kReturnRegister0, WasmFXResumeDescriptor::GetRegisterParameter(1));
   __ LeaveFrame(StackFrame::WASM_STACK_EXIT);
-  __ ret(AddArgumentPaddingSlots(
-             WasmFXSwitchDescriptor::GetStackParameterCount()) *
-         kSystemPointerSize);
+  ReturnFromStackSwitchingBuiltin(
+      masm, Builtin::kWasmFXSwitch,
+      AddArgumentPaddingSlots(
+          WasmFXSwitchDescriptor::GetStackParameterCount()) *
+          kSystemPointerSize);
 }
 
 void Builtins::Generate_WasmFXReturn(MacroAssembler* masm) {
@@ -6217,8 +6293,14 @@ void Builtins::Generate_InterpreterOnStackReplacement_ToBaseline(
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ pushq(kInterpreterAccumulatorRegister);
-    __ Push(closure);
+    // 16-byte stack alignment: pad the single saved slot, and push the single
+    // runtime argument with PushArgument so that it is padded too. CEntry
+    // drops the argument together with its padding slot; without it, CEntry
+    // would drop the saved accumulator instead.
+    if constexpr (ShouldPadArguments(1)) __ PushTaggedStackPadding();
+    __ PushArgument(closure);
     __ CallRuntime(Runtime::kInstallBaselineCode, 1);
+    if constexpr (ShouldPadArguments(1)) __ DropStackPadding();
     __ popq(kInterpreterAccumulatorRegister);
   }
   // Retry from the start after installing baseline code.

@@ -79,6 +79,9 @@
   'turbolev/regress-540717862': [PASS, SLOW],
   'turboshaft/regress-554421904': [PASS, SLOW],
 
+  # https://crbug.com/590044654
+  'string-localecompare-inline': [PASS, SLOW],
+
   # https://crbug.com/1129854
   'tools/log': ['arch == arm or arch == arm64', SKIP],
 
@@ -154,6 +157,7 @@
   'verify-assert-false': [NO_VARIANTS, ['mode == release and dcheck_always_on == False', PASS], ['mode == debug', FAIL]],
   'compiler/constant-field-hole-crash': [FAIL, NO_VARIANTS, ['official_build', CRASH]],
   'maglev/constant-field-hole-crash': [FAIL, NO_VARIANTS, ['official_build', CRASH]],
+  'maglev/regress-590080869': [FAIL, NO_VARIANTS],
 
   ##############################################################################
   # Tests with different versions for release and debug.
@@ -183,6 +187,7 @@
   'array-functions-prototype-misc': [PASS, SLOW],
   'array-tostring-stack-overflow': [PASS, SLOW, ['arch != x64', SKIP]],
   'compiler/regress-461531853': [PASS, SLOW],
+  'compiler/regress-588533894': [PASS, SLOW],
   'compiler/regress-9017': [PASS, SLOW],
   'compiler/regress-crbug-11564': [PASS, SLOW],
   'copy-on-write-assert': [PASS, SLOW],
@@ -846,6 +851,7 @@
   'sandbox/regress/regress-581560002': [SKIP],
   'sandbox/regress/regress-581855680-1': [SKIP],
   'sandbox/regress/regress-581855680-2': [SKIP],
+  'sandbox/regress/regress-585680021': [SKIP],
   'sandbox/regress-537948358': [SKIP],
   'sandbox/regress-558640961': [SKIP],
   'sandbox/wasm-inlining-sigcheck': [SKIP],
@@ -1010,6 +1016,7 @@
   'wasm/regress-wasmfx-exact-types': [SKIP],
   'wasm/resume-throw': [SKIP],
   'wasm/stack-switching*': [SKIP],
+  'wasm/table-set-non-function': [SKIP],
   'wasm/wasmfx*': [SKIP],
 
   # --wasm-stringref
@@ -1216,6 +1223,7 @@
   'regress/wasm/regress-577305505': [SKIP],
   'regress/wasm/regress-585810594-custom-descriptors': [SKIP],
   'regress/wasm/regress-586597800': [SKIP],
+  'regress/wasm/regress-588911899': [SKIP],
   'wasm/custom-descriptors*': [SKIP],
   'wasm/exact-types': [SKIP],
   'wasm/gc-casts-branch': [SKIP],
@@ -1458,20 +1466,24 @@
 
 ##############################################################################
 ['full_debug', {
-  # Slow tests.
-  'regress/regress-crbug-854299': [PASS, SLOW],
-
   # Tests too slow in non-optimized debug mode.
+  'compiler/inlining-exponential': [SKIP],
+  'compiler/module-namespace-export-folding': [SKIP],
   'es6/super-ic': [SKIP],
   'es6/typedarray-of': [SKIP],
   'regress/regress-1122': [SKIP],
   'regress/regress-2790': [SKIP],
+  'regress/regress-599414-array-concat-fast-path': [SKIP],
   'regress/regress-740784': [SKIP],
   'regress/regress-7558019': [SKIP],
   'regress/regress-992389': [SKIP],
+  'regress/regress-crbug-1191886': [SKIP],
   'regress/regress-crbug-1276923': [SKIP],
+  'regress/regress-crbug-854299': [SKIP],
   'wasm/memory-resizable-buffer-array-flat-flatmap-from': [SKIP],
   'wasm/memory-resizable-buffer-array-from-grows-detaches': [SKIP],
+  'wasm/memory-resizable-buffer-array-slice': [SKIP],
+  'wasm/shared-memory-resizable-buffer-array-concat': [SKIP],
   'wasm/shared-memory-resizable-buffer-array-flat-flatmap-from': [SKIP],
   'wasm/shared-memory-resizable-buffer-array-from-grows': [SKIP],
   'wasm/shared-memory-worker-gc': [SKIP],
@@ -2073,6 +2085,7 @@
   # https://crbug.com/539796962
   'compiler/concurrent-string-ext-seq': [SKIP],
   'compiler/regress-519664497': [SKIP],
+  'maglev/regress-588321630': [SKIP],
   'sandbox/regress/regress-575053489': [SKIP],
   'turboshaft/regress-539984773': [SKIP],
   'turboshaft/regress-587014652': [SKIP],

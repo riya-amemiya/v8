@@ -1282,6 +1282,9 @@ class MaglevGraphBuilder {
   }
 
   ReduceResult BuildLoadMap(ValueNode* object);
+  ReduceResult BuildLoadEnumCache(ValueNode* map);
+  ReduceResult BuildLoadEnumCacheIndices(ValueNode* enum_cache,
+                                         ValueNode* cache_length);
 
   std::optional<ValueNode*> TryBuildLoadTaggedFieldFromAllocation(
       ValueNode* object, int offset);
@@ -1494,6 +1497,8 @@ class MaglevGraphBuilder {
       ValueNode* object, ValueNode* index,
       base::Vector<const compiler::MapRef> maps, ElementsKind kind,
       KeyedAccessLoadMode load_mode);
+  ReduceResult BuildEnsureWritableFastElements(ValueNode* object,
+                                               ValueNode* elements);
   MaybeReduceResult TryBuildElementStoreOnJSArrayOrJSObject(
       ValueNode* object, ValueNode* index_object, ValueNode* value,
       base::Vector<const compiler::MapRef> maps, ElementsKind kind,

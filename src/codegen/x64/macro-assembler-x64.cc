@@ -1368,6 +1368,12 @@ void MacroAssembler::Abort(AbortReason reason) {
 
   Move(rdx, Smi::FromInt(static_cast<int>(reason)));
 
+  if constexpr (V8_X64_16BYTE_STACK_ALIGNMENT_BOOL) {
+    // 16-byte stack alignment: Abort can be reached from any stack state and
+    // control never returns here, so simply align rsp for the call.
+    andq(rsp, Immediate(-2 * kSystemPointerSize));
+  }
+
   {
     // We don't actually want to generate a pile of code for this, so just
     // claim there is a stack frame, without generating one.
@@ -4693,18 +4699,25 @@ void MacroAssembler::InvokeFunctionCode(
     LoadRoot(rdx, RootIndex::kUndefinedValue);
   }
 
-  if (argument_adaption_mode == ArgumentAdaptionMode::kAdapt) {
-    Register expected_parameter_count = rbx;
-    LoadParameterCountFromJSDispatchTable(expected_parameter_count,
-                                          dispatch_handle);
-    InvokePrologue(expected_parameter_count, actual_parameter_count, type);
-  }
-
   // We call indirectly through the code field in the function to
   // allow recompilation to take effect without changing any of the
   // call sites.
   static_assert(kJavaScriptCallCodeStartRegister == rcx, "ABI mismatch");
-  LoadEntrypointFromJSDispatchTable(rcx, dispatch_handle);
+  if (argument_adaption_mode == ArgumentAdaptionMode::kAdapt) {
+    // InvokePrologue preserves rcx.
+    Register expected_parameter_count = rbx;
+    LoadEntrypointAndParameterCountFromJSDispatchTable(
+        rcx, expected_parameter_count, dispatch_handle);
+    InvokePrologue(expected_parameter_count, actual_parameter_count, type);
+    if (v8_flags.debug_code) {
+      Register reloaded_entrypoint = expected_parameter_count;
+      LoadEntrypointFromJSDispatchTable(reloaded_entrypoint, dispatch_handle);
+      cmpq(rcx, reloaded_entrypoint);
+      Check(equal, AbortReason::kWrongFunctionCodeStart);
+    }
+  } else {
+    LoadEntrypointFromJSDispatchTable(rcx, dispatch_handle);
+  }
   Label done;
   switch (type) {
     case InvokeType::kCall:
@@ -4760,6 +4773,8 @@ void MacroAssembler::StackOverflowCheck(
   j(less_equal, stack_overflow, stack_overflow_distance);
 }
 
+// Must preserve rcx (kJavaScriptCallCodeStartRegister): InvokeFunctionCode
+// loads the code entry point into it before calling this.
 void MacroAssembler::InvokePrologue(Register expected_parameter_count,
                                     Register actual_parameter_count,
                                     InvokeType type) {
