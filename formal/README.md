@@ -48,6 +48,33 @@ passing the `FastJSArrayForRead` cast does not have dictionary elements,
 copy-on-write backing store never has a double elements kind, as
 `EnsureWriteableFastElements` in `src/builtins/array.tq` states.
 
+`JSArray::JSArrayVerify` relaxes the length premise when the backing store is
+`empty_fixed_array`. None of the code read for this premise leaves a fast array
+with a length above its backing store length. The creation paths read are
+`Factory::NewJSArray`, `Factory::NewJSArrayStorage`, `v8::Array::New`, the
+callers of the CSA `AllocateJSArray` overloads in `src/builtins`, `src/codegen`
+and `src/interpreter`, `JSCreateLowering::ReduceNewArray` in TurboFan, and
+`BuildAndAllocateJSArray` with `AllocateElementsArray` in Maglev. The length
+writers read are `SetLengthImpl` in `src/objects/elements.cc`,
+`JSObject::AddDataElement`, both `BuildAppendJSArray` overloads,
+`ArrayPrototypePop`, the growing branch of `EmitElementStore`,
+`ArrayConcatVisitor::ToArray`, `StringToList` and `FastSplice`. Each of them
+allocates or grows the backing store before it raises the length, or only
+lowers the length. `BuildAppendJSArray` in `src/codegen/code-stub-assembler.cc`
+names another bug or in-sandbox memory corruption as the way a length above the
+backing store length arises.
+
+When the premise fails, both fast paths access memory outside a backing store
+in a release build. `TryFastFlat` copies a `PACKED_SMI_ELEMENTS` or
+`PACKED_DOUBLE_ELEMENTS` subarray with `TorqueCopyElements`, and `CopyElements`
+checks the source range only with `CSA_DCHECK`, so the copy reads past the
+source backing store. Its element-by-element reads go through Torque slices,
+whose `AtIndex` stops the process on an out-of-bounds index instead.
+`TryFastArrayCopyWithin` hands its indices to `MoveElements`, which also checks
+them only with `CSA_DCHECK`, so the move reads and writes outside the backing
+store. The `Examples.lean` of both builtins check these cases on a fast array
+with length 3 and an empty backing store.
+
 ## Builtins
 
 `ArrayFlat/README.md` covers `TryFastFlat` in `src/builtins/array-flat.tq`, and
