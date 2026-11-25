@@ -1,0 +1,5 @@
+name = "ArrayFlat"
+defaultTargets = ["ArrayFlat"]
+
+[[lean_lib]]
+name = "ArrayFlat"
