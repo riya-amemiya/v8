@@ -277,9 +277,11 @@ ValueNode* UnwrapSinglePhis(ValueNode* node, UnwrapFunction&& unwrap) {
 }
 }  // namespace
 
-ValueNode* ValueNode::UnwrapIdentitiesAndPhis() {
-  return UnwrapSinglePhis(
-      this, [](ValueNode* node) { return node->UnwrapIdentities(); });
+ValueNode* ValueNode::UnwrapAliasesSlow() {
+  return UnwrapSinglePhis(this, [](ValueNode* node) {
+    while (node->Is<Identity>()) node = node->input(0).node();
+    return node;
+  });
 }
 
 ValueNode* ValueNode::UnwrapIdentitiesReturnedValuesAndPhisSlow() {
@@ -288,8 +290,10 @@ ValueNode* ValueNode::UnwrapIdentitiesReturnedValuesAndPhisSlow() {
   });
 }
 
-ValueNode* ValueNode::UnwrapForDeopt() {
-  return UnwrapSinglePhis(this, [](ValueNode* node) { return node->Unwrap(); });
+ValueNode* ValueNode::UnwrapSlow() {
+  return UnwrapSinglePhis(this, [](ValueNode* node) {
+    return node->UnwrapIdentitiesReturnedValuesAndConversions();
+  });
 }
 
 bool Phi::is_unmerged_loop_phi() const {
@@ -849,7 +853,7 @@ NodeType ValueNode::GetStaticType(compiler::JSHeapBroker* broker) {
       break;
     case ValueRepresentation::kNone:
       if (opcode() == Opcode::kIdentity) {
-        return UnwrapIdentities()->GetStaticType(broker);
+        return UnwrapAliases()->GetStaticType(broker);
       }
       [[fallthrough]];
     case ValueRepresentation::kRawPtr:
@@ -905,7 +909,7 @@ Tribool ValueNode::IsHole(RootIndex hole_index) const {
     return Tribool::kMaybe;
   }
   if (Is<Identity>()) {
-    return UnwrapIdentities()->IsHole(hole_index);
+    return UnwrapAliases()->IsHole(hole_index);
   }
   if (const Phi* phi = TryCast<Phi>()) {
     if (!phi->is_loop_phi() && !phi->is_exception_phi()) {
@@ -925,7 +929,7 @@ Tribool ValueNode::IsHole(RootIndex hole_index) const {
 }
 
 bool ValueNode::IsAnyHoleConstant() const {
-  if (const RootConstant* root = UnwrapIdentities()->TryCast<RootConstant>()) {
+  if (const RootConstant* root = UnwrapAliases()->TryCast<RootConstant>()) {
     return root->IsAnyHole();
   }
   return false;
@@ -974,7 +978,7 @@ ValueRepresentation ToValueRepresentation(MachineType type) {
 }
 
 void NodeBase::CheckInputIs(int i, ValueRepresentation expected) const {
-  const ValueNode* inp = input(i).node()->UnwrapIdentities();
+  const ValueNode* inp = input(i).node()->UnwrapAliases();
   DCHECK(!inp->Is<Identity>());
   ValueRepresentation got = inp->properties().value_representation();
   bool valid = ValueRepresentationIs(got, expected);
@@ -1125,12 +1129,12 @@ void CallKnownJSFunction::VerifyInputs() const {
 
 void UnsafeFloat64ToHoleyFloat64::VerifyInputs() const {
   Base::VerifyInputs();
-  CHECK(!input_node(0)->UnwrapIdentities()->MayBeHoleOrUndefinedNan());
+  CHECK(!input_node(0)->UnwrapAliases()->MayBeHoleOrUndefinedNan());
 }
 
 void StoreFixedDoubleArrayElement::VerifyInputs() const {
   Base::VerifyInputs();
-  CHECK(!ValueInput().node()->UnwrapIdentities()->MayBeHoleOrUndefinedNan());
+  CHECK(!ValueInput().node()->UnwrapAliases()->MayBeHoleOrUndefinedNan());
 }
 
 void InitializeFixedHoleyDoubleArrayElement::VerifyInputs() const {
@@ -1138,7 +1142,7 @@ void InitializeFixedHoleyDoubleArrayElement::VerifyInputs() const {
   // Only HoleyFloat64Constant may carry hole/undefined NaNs. A dynamic
   // HoleyFloat64 hole means `undefined`, which this raw store would turn into
   // an array hole.
-  const ValueNode* value = ValueInput().node()->UnwrapIdentities();
+  const ValueNode* value = ValueInput().node()->UnwrapAliases();
   CHECK(value->Is<HoleyFloat64Constant>() || !value->MayBeHoleOrUndefinedNan());
 }
 
@@ -5225,6 +5229,19 @@ void DebugBreak::SetValueLocationConstraints() {}
 void DebugBreak::GenerateCode(MaglevAssembler* masm,
                               const ProcessingState& state) {
   __ DebugBreak();
+}
+
+void Retain::SetValueLocationConstraints() {
+  // For non-constant values, UseAny extends the input's live range up to this
+  // node so safepoints keep it alive across GC without emitting code here.
+  UseAny(ValueInput());
+}
+void Retain::GenerateCode(MaglevAssembler* masm, const ProcessingState& state) {
+  // UseAny does not keep constants alive (they have no register/stack-slot
+  // safepoint entries), so retain HeapConstants on the code object directly.
+  if (HeapConstant* constant = ValueInput().node()->TryCast<HeapConstant>()) {
+    masm->code_gen_state()->Retain(constant->object().object());
+  }
 }
 
 int Abort::MaxCallStackArgs() const {

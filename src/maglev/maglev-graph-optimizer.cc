@@ -680,7 +680,7 @@ void MaglevGraphOptimizer::UnwrapInputs() {
   for (int i = 0; i < current_node()->input_count(); i++) {
     ValueNode* input = current_node()->input(i).node();
     if (!input) continue;
-    current_node()->change_input(i, input->UnwrapIdentitiesAndPhis());
+    current_node()->change_input(i, input->UnwrapAliases());
   }
 }
 
@@ -1320,6 +1320,11 @@ ProcessResult MaglevGraphOptimizer::VisitAssumeMap(AssumeMap*,
 
 ProcessResult MaglevGraphOptimizer::VisitAssumeType(AssumeType*,
                                                     const ProcessingState&) {
+  return ProcessResult::kContinue;
+}
+
+ProcessResult MaglevGraphOptimizer::VisitRetain(Retain*,
+                                                const ProcessingState&) {
   return ProcessResult::kContinue;
 }
 
@@ -4237,7 +4242,7 @@ ProcessResult MaglevGraphOptimizer::VisitJumpLoop(
       for (int i = 0; i < phi->input_count(); i++) {
         ValueNode* input = phi->input(i).node();
         if (!input) continue;
-        phi->change_input(i, input->UnwrapIdentities());
+        phi->change_input(i, input->UnwrapAliases());
       }
     }
   }

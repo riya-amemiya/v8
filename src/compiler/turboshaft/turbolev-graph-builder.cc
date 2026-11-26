@@ -518,13 +518,13 @@ class GeneratorAnalyzer {
   ZoneVector<const maglev::BasicBlock*> visit_queue_;
 };
 
-#define GET_FRAME_STATE_MAYBE_ABORT(name, deopt_info)    \
-  auto _maybe_frame_state = BuildFrameState(deopt_info); \
-  if (!_maybe_frame_state.has_value()) {                 \
-    DCHECK(bailout_->has_value());                       \
-    return maglev::ProcessResult::kAbort;                \
-  }                                                      \
-  auto name = _maybe_frame_state.value();
+#define GET_FRAME_STATE_MAYBE_ABORT(name, deopt_info)           \
+  auto _maybe_frame_state_##name = BuildFrameState(deopt_info); \
+  if (!_maybe_frame_state_##name.has_value()) {                 \
+    DCHECK(bailout_->has_value());                              \
+    return maglev::ProcessResult::kAbort;                       \
+  }                                                             \
+  auto name = _maybe_frame_state_##name.value();
 
 constexpr bool TooManyArgumentsForCall(size_t arguments_count) {
   constexpr int kCalleeCount = 1;
@@ -4164,7 +4164,7 @@ class GraphBuildingNodeProcessor {
   }
   maglev::ProcessResult Process(maglev::BigIntBinaryOperation* node,
                                 const maglev::ProcessingState& state) {
-    GET_FRAME_STATE_MAYBE_ABORT(frame_state, node->eager_deopt_info());
+    GET_FRAME_STATE_MAYBE_ABORT(eager_frame_state, node->eager_deopt_info());
     BigIntBinopOp::Kind kind;
     switch (node->operation()) {
       case ::Operation::kAdd:
@@ -4200,9 +4200,14 @@ class GraphBuildingNodeProcessor {
       default:
         UNREACHABLE();
     }
-    SetMap(node,
-           __ BigIntBinop(Map<BigInt>(node->LeftInput()),
-                          Map<BigInt>(node->RightInput()), frame_state, kind));
+    OptionalV<LazyFrameState> lazy_frame_state;
+    if (BigIntBinopOp::CanTerminate(kind)) {
+      GET_FRAME_STATE_MAYBE_ABORT(lazy_fs, node->lazy_deopt_info());
+      lazy_frame_state = lazy_fs;
+    }
+    SetMap(node, __ BigIntBinop(Map<BigInt>(node->LeftInput()),
+                                Map<BigInt>(node->RightInput()),
+                                eager_frame_state, lazy_frame_state, kind));
     return maglev::ProcessResult::kContinue;
   }
   maglev::ProcessResult Process(maglev::BigIntCompare* node,
@@ -5868,6 +5873,12 @@ class GraphBuildingNodeProcessor {
     return maglev::ProcessResult::kContinue;
   }
 
+  maglev::ProcessResult Process(maglev::Retain* node,
+                                const maglev::ProcessingState&) {
+    __ Retain(Map(node->ValueInput()));
+    return maglev::ProcessResult::kContinue;
+  }
+
   maglev::ProcessResult Process(maglev::TurbofanStaticAssert* node,
                                 const maglev::ProcessingState&) {
     V<Word32> condition = __ TaggedEqual(
@@ -6396,7 +6407,7 @@ class GraphBuildingNodeProcessor {
 
   void AddDeoptInput(FrameStateData::Builder& builder,
                      const maglev::ValueNode* node) {
-    node = node->UnwrapIdentities();
+    node = node->UnwrapAliases();
     if (const maglev::VirtualObject* vobj =
             node->TryCast<maglev::VirtualObject>()) {
       DCHECK(v8_flags.turbolev_escape_analysis);
@@ -7212,7 +7223,7 @@ class GraphBuildingNodeProcessor {
                 compact_frame->GetValueOf(owner, maglev_unit);
             DCHECK_NOT_NULL(maglev_value);
 
-            maglev_value = maglev_value->UnwrapIdentities();
+            maglev_value = maglev_value->UnwrapAliases();
 
             if (const maglev::VirtualObject* vobj =
                     maglev_value->TryCast<maglev::VirtualObject>()) {

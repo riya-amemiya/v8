@@ -581,10 +581,7 @@ std::optional<ValueNode*> MaglevReducer<BaseT>::TryGetConstantAlternative(
     ValueNode* node) {
   // Constants already carry their value and must not return themselves as an
   // alternative (callers recurse on the returned constant).
-  // TODO(victorgomes): Fold UnwrapForDeopt into Unwrap in a follow-up (today
-  // Unwrap unwraps identities, returned values, and conversions, but not
-  // single-input phis).
-  if (IsConstantNode(node->UnwrapForDeopt()->opcode())) return {};
+  if (IsConstantNode(node->Unwrap()->opcode())) return {};
   const NodeInfo* info = known_node_aspects().TryGetInfoFor(node);
   if (info) {
     if (auto c = info->alternative().checked_value()) {
@@ -750,13 +747,13 @@ MaybeAssignedFlag MaglevReducer<BaseT>::GetContextMaybeAssigned(
 template <typename BaseT>
 ValueNode* MaglevReducer<BaseT>::TryGetParentContext(ValueNode* node) {
   if (CreateFunctionContext* n = node->TryCast<CreateFunctionContext>()) {
-    return n->ContextInput().node()->UnwrapIdentitiesAndPhis();
+    return n->ContextInput().node()->UnwrapAliases();
   }
 
   if (InlinedAllocation* alloc = node->TryCast<InlinedAllocation>()) {
     return alloc->object()
         ->get(Context::OffsetOfElementAt(Context::PREVIOUS_INDEX))
-        ->UnwrapIdentitiesAndPhis();
+        ->UnwrapAliases();
   }
 
   if (CallRuntime* n = node->TryCast<CallRuntime>()) {
@@ -764,7 +761,7 @@ ValueNode* MaglevReducer<BaseT>::TryGetParentContext(ValueNode* node) {
       case Runtime::kPushBlockContext:
       case Runtime::kPushCatchContext:
       case Runtime::kNewFunctionContext:
-        return n->ContextInput().node()->UnwrapIdentitiesAndPhis();
+        return n->ContextInput().node()->UnwrapAliases();
       default:
         break;
     }
@@ -2479,8 +2476,7 @@ void MaglevReducer<BaseT>::SetKnownValue(ValueNode* node,
   // Constants already carry their value and must not attach a checked_value
   // alternative (TryGetConstantAlternative ignores constants, so repeated
   // checks would otherwise overwrite checked_value).
-  // TODO(victorgomes): Fold UnwrapForDeopt into Unwrap in a follow-up.
-  if (IsConstantNode(node->UnwrapForDeopt()->opcode())) return;
+  if (IsConstantNode(node->Unwrap()->opcode())) return;
   NodeInfo* known_info = GetOrCreateInfoFor(node);
   // ref type should be compatible with type.
   DCHECK(NodeTypeIs(StaticTypeForConstant(broker(), ref), new_node_type));
@@ -6804,7 +6800,7 @@ MaybeReduceResult MaglevReducer<BaseT>::TryReducePromisePrototypeCatch(
   ValueNode* undefined_value = GetRootConstant(RootIndex::kUndefinedValue);
   ValueNode* on_fulfilled = undefined_value;
   ValueNode* on_rejected =
-      args.count() > 0 ? args[0]->UnwrapIdentities() : undefined_value;
+      args.count() > 0 ? args[0]->UnwrapAliases() : undefined_value;
   return TryReducePromiseThenImpl("Promise.prototype.catch", args, on_fulfilled,
                                   on_rejected, /*needs_then_protector=*/true);
 }
@@ -6815,9 +6811,9 @@ MaybeReduceResult MaglevReducer<BaseT>::TryReducePromisePrototypeThen(
   if (args.mode() != CallArguments::kDefault) return {};
   ValueNode* undefined_value = GetRootConstant(RootIndex::kUndefinedValue);
   ValueNode* on_fulfilled =
-      args.count() > 0 ? args[0]->UnwrapIdentities() : undefined_value;
+      args.count() > 0 ? args[0]->UnwrapAliases() : undefined_value;
   ValueNode* on_rejected =
-      args.count() > 1 ? args[1]->UnwrapIdentities() : undefined_value;
+      args.count() > 1 ? args[1]->UnwrapAliases() : undefined_value;
   return TryReducePromiseThenImpl("Promise.prototype.then", args, on_fulfilled,
                                   on_rejected, /*needs_then_protector=*/false);
 }
