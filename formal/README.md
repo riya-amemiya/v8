@@ -1,10 +1,10 @@
 # Lean 4 models and safety proofs for V8 builtins
 
-This directory is one Lake project with four libraries. `Torque` models the
-heap objects and the Torque and CodeStubAssembler macros that several builtins
-share. `ArrayFlat`, `ArrayCopyWithin` and `ArrayFill` model one builtin each on
-top of it and prove its safety properties. The proofs use only the Lean 4 core
-library.
+This directory is one Lake project. `Torque` models the heap objects and the
+Torque and CodeStubAssembler macros that several builtins share, and
+`ArrayBuild` models the element stores and array copies that several Array
+builtins share. Every other library models one builtin on top of them and
+proves its safety properties. The proofs use only the Lean 4 core library.
 
 ## Checking the proofs
 
@@ -127,8 +127,18 @@ with length 3 and an empty backing store.
 
 ## Builtins
 
-`ArrayFlat/README.md` covers `TryFastFlat` in `src/builtins/array-flat.tq`,
-`ArrayCopyWithin/README.md` covers `TryFastArrayCopyWithin` in
-`src/builtins/array-copywithin.tq`, and `ArrayFill/README.md` covers
-`TryFastArrayFill` in `src/builtins/builtins-array.cc` with the elements
-accessors it calls.
+| Library | Builtin | Source |
+| --- | --- | --- |
+| `ArrayFlat` | `Array.prototype.flat` | `TryFastFlat` in `src/builtins/array-flat.tq` |
+| `ArrayCopyWithin` | `Array.prototype.copyWithin` | `src/builtins/array-copywithin.tq` |
+| `ArrayFill` | `Array.prototype.fill` | `TryFastArrayFill` in `src/builtins/builtins-array.cc` and the elements accessors it calls |
+| `ArrayBuild` | shared by `concat`, `Array.of` and `Array.from` | `FastCreateDataProperty` in `src/builtins/base.tq` and `CloneFastJSArray` in `src/codegen/code-stub-assembler.cc` |
+| `ArrayAt` | `Array.prototype.at` | `src/builtins/array-at.tq` |
+| `ArrayConcat` | `Array.prototype.concat` | `src/builtins/array-concat.tq` |
+| `ArrayLastIndexOf` | `Array.prototype.lastIndexOf` | `src/builtins/array-lastindexof.tq` |
+| `ArrayOf` | `Array.of` | `src/builtins/array-of.tq` |
+| `ArrayFrom` | `Array.from` | `src/builtins/array-from.tq` and the array and string branches of `FastIterableToList` |
+| `ArrayIsArray` | `Array.isArray` | `src/builtins/array-isarray.tq` |
+
+Each library has a `README.md` with the correspondence to the V8 sources, the
+theorems, the assumptions and what is not modeled.
