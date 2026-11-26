@@ -64,15 +64,6 @@ def extractFast (lim : Limits) (a : JSArr) (begin count : Nat) : Result JSArr :=
     | some s => .done a (newArray a.kind s)
     | none => .ub
 
-def cloneFast (lim : Limits) (a : JSArr) : Result JSArr :=
-  if a.fast = false then .ub
-  else if a.length = 0 then .done a (newArray a.kind [])
-  else if a.cow = true then .done a ⟨a.kind, true, true, true, true, a.length, a.store⟩
-  else if lim.maxLen < a.length then .abort
-  else match copyElements (List.replicate a.length none) 0 a.store 0 a.length with
-    | some s => .done a (newArray a.kind s)
-    | none => .ub
-
 def specSlice (xs : List (Option Val)) (k n : Nat) : List (Option Val) :=
   (List.range n).map fun i => xs.getD (k + i) none
 

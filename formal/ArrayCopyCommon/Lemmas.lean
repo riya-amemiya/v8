@@ -101,29 +101,6 @@ theorem kindOk_specSlice {a : JSArr} (hw : a.WF) {k n : Nat} (h : k + n ≤ a.le
   intro x hx
   exact hw.kind_ok x (mem_specSlice (by rw [JSArr.elems_length hw]; exact h) hx)
 
-theorem cloneFast_eq {lim : Limits} {a : JSArr} (hw : a.WF) (hf : a.fast = true)
-    (hm : a.length ≤ lim.maxLen) :
-    cloneFast lim a = if a.length ≠ 0 ∧ a.cow = true then
-      .done a ⟨a.kind, true, true, true, true, a.length, a.store⟩
-    else .done a (newArray a.kind a.elems) := by
-  have hl := hw.length_le
-  have hel := JSArr.elems_length hw
-  unfold cloneFast
-  rw [ite_eq_right (by simp [hf])]
-  by_cases h0 : a.length = 0
-  · rw [ite_eq_left h0, ite_eq_right (show ¬(a.length ≠ 0 ∧ a.cow = true) from fun h => h.1 h0)]
-    have : a.elems = [] := List.eq_nil_of_length_eq_zero (by omega)
-    rw [this]
-  · rw [ite_eq_right h0]
-    by_cases hc : a.cow = true
-    · rw [ite_eq_left hc, ite_eq_left (show a.length ≠ 0 ∧ a.cow = true from ⟨h0, hc⟩)]
-    · rw [ite_eq_right hc, ite_eq_right (show ¬(a.length ≠ 0 ∧ a.cow = true) from fun h => hc h.2),
-        ite_eq_right (show ¬lim.maxLen < a.length by omega),
-        copyElements_eq (by simp) (by omega),
-        blit_zero_full (by rw [length_take_drop (by omega)]; simp),
-        take_drop_eq_specSlice (by omega), specSlice_store (by omega),
-        specSlice_full hel]
-
 theorem kindOk_packed_some {k : Kind} (hk : isFastPacked k = true) {x : Option Val}
     (h : kindOk k x = true) : x ≠ none := by
   intro hx

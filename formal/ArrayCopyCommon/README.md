@@ -30,22 +30,15 @@ build on it. `ArraySlice` also imports `ArrayBuild` for `CloneFastJSArray`.
 | `copyElements` | `CopyElements` in `src/codegen/code-stub-assembler.cc`, whose ranges are checked only with `CSA_DCHECK` |
 | `storeChecked` | an element store through a bounds-checked Torque slice |
 | `extractFast` | `ExtractFastJSArray` in `src/codegen/code-stub-assembler.cc`, which copies with `ExtractFixedArray` and keeps the source kind |
-| `cloneFast` | `CloneFastJSArray`, which shares a copy-on-write backing store instead of copying it |
 | `specSlice` | the elements `k` to `k + n - 1` of a list, with holes and indices past its end absent |
 
-`ExtractFastJSArray` and `CloneFastJSArray` assume a fast array, so a
-non-fast argument gives `ub`.
+`ExtractFastJSArray` assumes a fast array, so a non-fast argument gives `ub`.
 
 ## Theorems
 
 `extractFast_eq`. For a fast array whose length is at most its backing store
 length, and `k + n ≤ a.length` and `n ≤ lim.maxLen`, `extractFast` returns a
 new array of the source kind whose elements are `specSlice a.elems k n`.
-
-`cloneFast_eq`. For a well-formed fast array with `a.length ≤ lim.maxLen`,
-`cloneFast` returns an array that shares the copy-on-write backing store when
-the source is non-empty and copy-on-write, and otherwise a new array whose
-elements are `a.elems`.
 
 `newArray_wf`, `newArray_slack` and `newArray_elems`. A new array of a fast
 kind whose values the kind allows is well formed, satisfies `JSArr.SlackHoles`
@@ -60,11 +53,11 @@ the length.
 
 ## Assumptions
 
-The lemmas take only the explicit bounds above and, for `cloneFast_eq` and
-`kindOk_specSlice`, `JSArr.WF`.
+The lemmas take only the explicit bounds above and, for `kindOk_specSlice`,
+`JSArr.WF`.
 
 ## Not modeled
 
 The allocation of the result arrays, write barriers and the float64
-representation of doubles are outside the model. `ArraySlice` uses the
-`CloneFastJSArray` model of `ArrayBuild`, not `cloneFast`.
+representation of doubles are outside the model. `ArraySlice` takes its
+`CloneFastJSArray` model from `ArrayBuild`.
