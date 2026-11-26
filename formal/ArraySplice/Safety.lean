@@ -88,6 +88,7 @@ theorem slack_at {e : JSArr} (hsl : e.SlackHoles) {j : Nat} (hj : e.length ≤ j
 theorem shuffle_spec {c : Config} {e : JSArr} {len n start ic adc : Nat}
     (hp : ShufflePre c e len n start ic adc) :
     shuffle c e len n start ic adc ≠ .ub ∧
+      (shuffle c e len n start ic adc = .abort → c.maxLen < newCapacity n) ∧
       ∀ r, shuffle c e len n start ic adc = .ok r → r.2 = false ∧ Shuffled e n start ic adc r.1 := by
   have hc := hp.cow
   have hl := hp.length
@@ -97,7 +98,7 @@ theorem shuffle_spec {c : Config} {e : JSArr} {len n start ic adc : Nat}
   unfold shuffle
   by_cases h1 : ic = adc
   · rw [ite_eq_left h1]
-    refine ⟨nofun, fun r hr' => ?_⟩
+    refine ⟨nofun, nofun, fun r hr' => ?_⟩
     cases hr'
     refine ⟨hc, ⟨show n ≤ e.store.length by omega, fun _ _ => rfl,
       fun j _ _ => by rw [h1, Nat.add_sub_cancel], ?_⟩⟩
@@ -122,7 +123,7 @@ theorem shuffle_spec {c : Config} {e : JSArr} {len n start ic adc : Nat}
     simp only [Res.ok_bind]
     rw [hc, ht]
     simp only [Res.ok_bind, Res.pure_eq]
-    refine ⟨nofun, fun r hr' => ?_⟩
+    refine ⟨nofun, nofun, fun r hr' => ?_⟩
     cases hr'
     refine ⟨rfl, ⟨by rw [htl, hml]; omega, ?_, ?_, ?_⟩⟩
     · intro j hj
@@ -146,7 +147,7 @@ theorem shuffle_spec {c : Config} {e : JSArr} {len n start ic adc : Nat}
       (count := len - adc - start) (by omega) (by omega)
     have hml := length_moveElements (store := e.store) (dst := start + ic) (src := start + adc)
       (count := len - adc - start) (by omega)
-    refine ⟨nofun, fun r hr' => ?_⟩
+    refine ⟨nofun, nofun, fun r hr' => ?_⟩
     cases hr'
     refine ⟨hc, ⟨by rw [hml]; omega, ?_, ?_, ?_⟩⟩
     · intro j hj
@@ -166,18 +167,18 @@ theorem shuffle_spec {c : Config} {e : JSArr} {len n start ic adc : Nat}
   · rw [ite_eq_left h4]
     have hz : len = 0 := by have := h4.2; rw [this] at hr; simp at hr; omega
     split
-    · exact ⟨nofun, fun r hr' => by cases hr'⟩
+    · exact ⟨nofun, fun _ => by assumption, fun r hr' => by cases hr'⟩
     simp only [Res.ok_bind]
     rw [ite_eq_right (by rw [h4.2]; simp)]
     simp only [Res.pure_eq]
-    refine ⟨nofun, fun r hr' => ?_⟩
+    refine ⟨nofun, nofun, fun r hr' => ?_⟩
     cases hr'
     refine ⟨rfl, ⟨by simp; omega, fun j hj => by omega, fun j _ _ => by omega, ?_⟩⟩
     intro j _ hjs
     rw [List.getElem?_replicate, ite_eq_left (by simpa using hjs)]
   rw [ite_eq_right h4, ite_eq_right (by omega)]
   split
-  · exact ⟨nofun, fun r hr' => by cases hr'⟩
+  · exact ⟨nofun, fun _ => by assumption, fun r hr' => by cases hr'⟩
   simp only [Res.ok_bind]
   have hfl : (e.store.take start ++ List.replicate (newCapacity n - start) none).length =
       newCapacity n := by
@@ -197,7 +198,7 @@ theorem shuffle_spec {c : Config} {e : JSArr} {len n start ic adc : Nat}
   by_cases h5 : 0 < e.store.length
   · rw [ite_eq_left h5, memcpy_ok (by rw [hfl]; omega) (by omega)]
     simp only [Res.ok_bind, Res.pure_eq]
-    refine ⟨nofun, fun r hr' => ?_⟩
+    refine ⟨nofun, nofun, fun r hr' => ?_⟩
     cases hr'
     have hlen : ((e.store.drop (start + adc)).take (len - adc - start)).length =
         len - adc - start := by
@@ -220,7 +221,7 @@ theorem shuffle_spec {c : Config} {e : JSArr} {len n start ic adc : Nat}
         ite_eq_right (by omega), ite_eq_left hjs]
   · rw [ite_eq_right h5]
     simp only [Res.pure_eq]
-    refine ⟨nofun, fun r hr' => ?_⟩
+    refine ⟨nofun, nofun, fun r hr' => ?_⟩
     cases hr'
     have hz : len = 0 := by omega
     refine ⟨rfl, ⟨by rw [hfl]; omega, fun j hj => by omega, fun j _ _ => by omega, ?_⟩⟩
@@ -356,6 +357,7 @@ theorem fastSplice_spec {c : Config} {b : JSArr} {len n start adc : Nat} {xs : L
     (hitems : ∀ e ∈ xs, kindOk b.kind (some e) = true)
     (hdbl : b.kind.isDouble = true → ∀ e ∈ xs, e.isNumber = true) :
     fastSplice c b len n start adc xs ≠ .ub ∧
+      (fastSplice c b len n start adc xs = .abort → c.maxLen < newCapacity n) ∧
       ∀ b', fastSplice c b len n start adc xs = .ok b' →
         b'.WF ∧ b'.SlackHoles ∧ b'.elems = specList b start adc xs ∧ b'.length = n ∧
           b'.kind = b.kind ∧ b'.cow = false := by
@@ -367,7 +369,7 @@ theorem fastSplice_spec {c : Config} {b : JSArr} {len n start adc : Nat} {xs : L
   have hec := ensureWritable_cow b
   have hpre : ShufflePre c (ensureWritable b) len n start xs.length adc :=
     ⟨hec, hesl, by rw [hel, hl], by rw [← hl, ← hel]; exact hew.length_le, hr, hn, hcap⟩
-  obtain ⟨hsu, hsr⟩ := shuffle_spec hpre
+  obtain ⟨hsu, hsa, hsr⟩ := shuffle_spec hpre
   unfold fastSplice
   rw [ensureWritableChecked_ok hw hst hms]
   simp only [Res.ok_bind]
@@ -376,7 +378,7 @@ theorem fastSplice_spec {c : Config} {b : JSArr} {len n start adc : Nat} {xs : L
   | ub => exact absurd hsh hsu
   | abort =>
     simp only [Res.abort_bind]
-    exact ⟨nofun, fun b' h => by cases h⟩
+    exact ⟨nofun, fun _ => hsa hsh, fun b' h => by cases h⟩
   | ok r =>
     obtain ⟨r1, r2⟩ := r
     obtain ⟨hr2, hshuf0⟩ := hsr _ hsh
@@ -391,7 +393,7 @@ theorem fastSplice_spec {c : Config} {b : JSArr} {len n start adc : Nat} {xs : L
       (by omega) (by rw [hek]; exact hdbl)
     rw [ht]
     simp only [Res.ok_bind, Res.pure_eq]
-    refine ⟨nofun, fun b' hb' => ?_⟩
+    refine ⟨nofun, nofun, fun b' hb' => ?_⟩
     cases hb'
     have hS : (specList b start adc xs).length = n := by
       simp only [specList, specSplice, List.length_append, List.length_take, List.length_map,
@@ -449,7 +451,7 @@ structure Bounds (c : Config) (a : JSArr) (len start adc : Nat) (xs : List Val) 
   store : a.store.length ≤ c.maxLen
   maxLen : c.maxLen ≤ c.smiMax
   range : start + adc ≤ len
-  grow : newCapacity (len + xs.length) ≤ c.smiMax
+  grow : newCapacity (c.maxLen + xs.length) ≤ c.smiMax
 
 theorem transition_props {c : Config} {a b : JSArr} {xs : List Val} (hw : a.WF)
     (hsl : a.SlackHoles) (hf : a.kind.isFast = true)
@@ -538,6 +540,19 @@ theorem extract_spec {c : Config} {b : JSArr} {start adc : Nat} (hw : b.WF)
       rw [hbl]
       exact ⟨newArray_wf hf hk, newArray_slack _ _, newArray_elems _ _, by simp [newArray, hlen]⟩
 
+theorem transitionTo_ne_abort {c : Config} {a : JSArr} {k : Kind}
+    (h : a.store.length ≤ c.maxLen) : transitionTo c a k ≠ .abort := by
+  unfold transitionTo
+  dsimp only
+  split
+  · nofun
+  split
+  · nofun
+  split
+  · nofun
+  rw [ite_eq_right (by omega)]
+  nofun
+
 theorem newCapacity_mono {m n : Nat} (h : m ≤ n) : newCapacity m ≤ newCapacity n := by
   unfold newCapacity
   omega
@@ -545,6 +560,7 @@ theorem newCapacity_mono {m n : Nat} (h : m ≤ n) : newCapacity m ≤ newCapaci
 theorem tryFast_spec {c : Config} {m : MapInfo} {a : JSArr} {len start adc : Nat} {xs : List Val}
     (hw : a.WF) (hsl : a.SlackHoles) (hb : Bounds c a len start adc xs) :
     tryFast c m a len start adc xs ≠ .ub ∧
+      (tryFast c m a len start adc xs = .abort → c.maxLen < newCapacity (len + xs.length - adc)) ∧
       ∀ a' d, tryFast c m a len start adc xs = .done a' d →
         a'.WF ∧ a'.SlackHoles ∧ a'.elems = (specSplice a.elems start adc xs).1 ∧
           a'.length = len + xs.length - adc ∧ d.WF ∧
@@ -552,9 +568,9 @@ theorem tryFast_spec {c : Config} {m : MapInfo} {a : JSArr} {len start adc : Nat
   have hrange := hb.range
   unfold tryFast
   split
-  · exact ⟨nofun, fun _ _ h => by cases h⟩
+  · exact ⟨nofun, nofun, fun _ _ h => by cases h⟩
   split
-  · exact ⟨nofun, fun _ _ h => by cases h⟩
+  · exact ⟨nofun, nofun, fun _ _ h => by cases h⟩
   rename_i _ hfc
   have hfc' : a.forCopy = true := by
     cases h : a.forCopy
@@ -567,7 +583,12 @@ theorem tryFast_spec {c : Config} {m : MapInfo} {a : JSArr} {len start adc : Nat
     split at ht
     · cases ht
     · exact absurd ht (transitionTo_spec _ hw).1
-  | abort => exact ⟨nofun, fun _ _ h => by cases h⟩
+  | abort =>
+    exfalso
+    unfold transitionForInsertion at ht
+    split at ht
+    · cases ht
+    · exact transitionTo_ne_abort hb.store ht
   | ok b =>
     obtain ⟨hbw, hbsl, hbe, hbl, hbs, hbi, hbd⟩ := transition_props hw hsl hfast ht
     have hbf : b.kind.isFast = true := hbw.forRead_fast (by
@@ -579,16 +600,22 @@ theorem tryFast_spec {c : Config} {m : MapInfo} {a : JSArr} {len start adc : Nat
       · exact ((transitionTo_spec _ hw).2 b ht).forRead_eq ▸ this)
     simp only [Res.ok_then]
     split
-    · exact ⟨nofun, fun _ _ h => by cases h⟩
+    · exact ⟨nofun, nofun, fun _ _ h => by cases h⟩
     split
-    · exact ⟨nofun, fun _ _ h => by cases h⟩
+    · exact ⟨nofun, nofun, fun _ _ h => by cases h⟩
     rename_i _ hlen
     have hlen' : len = b.length := by
       cases Nat.decEq len b.length with
       | isTrue h => exact h
       | isFalse h => exact absurd h hlen
-    have hgrow := hb.grow
-    have hn1 : len + xs.length - adc ≤ newCapacity (len + xs.length) := by
+    have hlm : len ≤ c.maxLen := by
+      have h1 := hbw.length_le
+      have h2 := hb.store
+      rw [hbs] at h1
+      omega
+    have hgrow : newCapacity (len + xs.length - adc) ≤ c.smiMax :=
+      Nat.le_trans (newCapacity_mono (by omega)) hb.grow
+    have hn1 : len + xs.length - adc ≤ newCapacity (len + xs.length - adc) := by
       unfold newCapacity
       omega
     rw [ite_eq_right (by omega)]
@@ -596,7 +623,15 @@ theorem tryFast_spec {c : Config} {m : MapInfo} {a : JSArr} {len start adc : Nat
       (by omega)
     cases he : extract c b start adc with
     | ub => exact absurd he hex
-    | abort => exact ⟨nofun, fun _ _ h => by cases h⟩
+    | abort =>
+      exfalso
+      unfold extract at he
+      split at he
+      · cases he
+      · split at he
+        · omega
+        · rw [memcpy_ok (by simp) (by have := hbw.length_le; omega)] at he
+          cases he
     | ok d =>
       obtain ⟨hdw, _, hde, hdl⟩ := hexs d he
       simp only [Res.ok_then]
@@ -606,7 +641,7 @@ theorem tryFast_spec {c : Config} {m : MapInfo} {a : JSArr} {len start adc : Nat
       have helen : a.elems.length = len := by rw [JSArr.elems_length hw, ← hbl, ← hlen']
       split
       · rename_i h0
-        refine ⟨nofun, fun a' d' h => ?_⟩
+        refine ⟨nofun, nofun, fun a' d' h => ?_⟩
         cases h
         refine ⟨⟨by simp, by simp [JSArr.elems], ?_, ?_, ?_, ?_⟩, ?_, ?_, h0.symm ▸ rfl, hdw,
           hspec2, hdl⟩
@@ -627,17 +662,16 @@ theorem tryFast_spec {c : Config} {m : MapInfo} {a : JSArr} {len start adc : Nat
           simp only [List.take_nil, specSplice]
           exact this.symm
       · rename_i h0
-        obtain ⟨hfu, hfs⟩ := fastSplice_spec (c := c) (n := len + xs.length - adc) hbw hbsl
-          hlen'.symm (by omega) (by omega)
-          (Nat.le_trans (newCapacity_mono (by omega)) hgrow) (by rw [hbs]; exact hb.store) hb.maxLen
+        obtain ⟨hfu, hfa, hfs⟩ := fastSplice_spec (c := c) (n := len + xs.length - adc) hbw hbsl
+          hlen'.symm (by omega) (by omega) hgrow (by rw [hbs]; exact hb.store) hb.maxLen
           hbi hbd
         cases hfsp : fastSplice c b len (len + xs.length - adc) start adc xs with
         | ub => exact absurd hfsp hfu
-        | abort => exact ⟨nofun, fun _ _ h => by cases h⟩
+        | abort => exact ⟨nofun, fun _ => hfa hfsp, fun _ _ h => by cases h⟩
         | ok b' =>
           obtain ⟨hw', hsl', he', hl', _, _⟩ := hfs b' hfsp
           simp only [Res.ok_then]
-          refine ⟨nofun, fun a' d' h => ?_⟩
+          refine ⟨nofun, nofun, fun a' d' h => ?_⟩
           cases h
           refine ⟨hw', hsl', ?_, hl', hdw, hspec2, hdl⟩
           rw [he']
@@ -654,5 +688,24 @@ theorem actual_range (len : Nat) (args : Args) :
   | none => simp only [actualDeleteCount]; omega
   | start s => simp only [actualDeleteCount, Args.startArg] at hs ⊢; omega
   | full s dc xs => simp only [actualDeleteCount, Args.startArg] at hs ⊢; omega
+
+theorem fastPath_spec {c : Config} {m : MapInfo} {a : JSArr} {len : Nat} {args : Args}
+    (hw : a.WF) (hsl : a.SlackHoles) (hst : a.store.length ≤ c.maxLen)
+    (hms : c.maxLen ≤ c.smiMax) (hgrow : newCapacity (c.maxLen + args.items.length) ≤ c.smiMax) :
+    fastPath c m a len args ≠ .ub ∧
+      (fastPath c m a len args = .abort →
+        c.maxLen < newCapacity (len + args.items.length - actualDeleteCount len args)) ∧
+      ∀ a' d, fastPath c m a len args = .done a' d →
+        a'.WF ∧ a'.SlackHoles ∧
+          a'.elems = (specSplice a.elems (actualStart len args.startArg)
+            (actualDeleteCount len args) args.items).1 ∧
+          a'.length = len + args.items.length - actualDeleteCount len args ∧ d.WF ∧
+          d.elems = (specSplice a.elems (actualStart len args.startArg)
+            (actualDeleteCount len args) args.items).2 ∧
+          d.length = actualDeleteCount len args := by
+  unfold fastPath
+  split
+  · exact ⟨nofun, nofun, fun _ _ h => by cases h⟩
+  · exact tryFast_spec hw hsl ⟨hst, hms, actual_range len args, hgrow⟩
 
 end ArraySplice

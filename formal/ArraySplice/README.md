@@ -45,18 +45,25 @@ map checks, the copy-on-write handling and the kind transition come from
 
 ## Theorems
 
-`tryFast_spec`. For every well-formed array with holes past its length and
-every length, start, delete count and item list satisfying `Bounds`, the fast
-path has no undefined behavior, and when it returns `a'` and `d`, `a'` is well
-formed, satisfies `JSArr.SlackHoles`, has length `len + xs.length - adc` and
-elements `(specSplice a.elems start adc xs).1`, and `d` is well formed with
-length `adc` and elements `(specSplice a.elems start adc xs).2`.
+`fastPath_spec`. For every well-formed array with holes past its length whose
+backing store has at most `c.maxLen` slots, every length and every argument
+form, when `c.maxLen ≤ c.smiMax` and
+`newCapacity (c.maxLen + args.items.length) ≤ c.smiMax`, the fast path has no
+undefined behavior, aborts only when the grown backing store would need more
+than `c.maxLen` slots, and when it returns `a'` and `d`, `a'` is well formed,
+satisfies `JSArr.SlackHoles`, has the new length and the elements of
+`specSplice` at the actual start and delete count, and `d` is well formed with
+the deleted elements. That abort is the `FatalProcessOutOfMemoryInvalidArrayLength`
+call of `AllocateFixedArray` in `src/codegen/code-stub-assembler.cc`, which
+V8 performs for any backing store above `FixedArray::kMaxLength`. Whenever the
+grown backing store fits, no bounds check, `unreachable` or other abort occurs.
 
-`actual_range`. For every length and argument form,
-`actualStart len args.startArg + actualDeleteCount len args ≤ len`, which is the
+`tryFast_spec` states the same for explicit start and delete count satisfying
+`Bounds`, and `actual_range` shows
+`actualStart len args.startArg + actualDeleteCount len args ≤ len`, the
 `range` field of `Bounds` for the arguments `fastPath` passes.
 
-The library proves no theorem that excludes an abort. `Examples.lean` checks
+`Examples.lean` checks
 that `insertLoop` is undefined behavior when it stores a non-number into a
 double backing store, which is why the kind transition runs before the
 insertion, that `memmove` past the backing store is undefined behavior, and
@@ -64,10 +71,12 @@ that a copy-on-write array is copied before it is modified.
 
 ## Assumptions
 
-The array satisfies `JSArr.WF` and `JSArr.SlackHoles`. `Bounds` requires a
-backing store length of at most `c.maxLen`, `c.maxLen ≤ c.smiMax`,
-`start + adc ≤ len`, and `newCapacity (len + xs.length) ≤ c.smiMax`, so that
-`CalculateNewElementsCapacity` of the new length is a Smi.
+The array satisfies `JSArr.WF` and `JSArr.SlackHoles`. `c.maxLen` stands for
+`kMaxFixedArrayCapacity` in `src/objects/fixed-array-base.h`, 128 Mi slots,
+which bounds every backing store, and `c.smiMax` for the Smi maximum,
+`2^30 - 1` with pointer compression. `newCapacity (c.maxLen + k) ≤ c.smiMax`
+then holds for every argument count `k` up to 581610143, far more than
+the stack allows, so `CalculateNewElementsCapacity` of the new length is a Smi.
 
 ## Not modeled
 
