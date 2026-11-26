@@ -97,3 +97,6 @@ name = "ArrayShift"
 
 [[lean_lib]]
 name = "ArrayUnshift"
+
+[[lean_lib]]
+name = "ArraySplice"
