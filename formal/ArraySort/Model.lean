@@ -94,6 +94,9 @@ def compare (cmp : Cmp ε) (x y : Val) : M ε Int := fun e c =>
   | some (o, e') => .ok o e' c
   | none => .throw e
 
+def compareKey (cmp : Cmp ε) (keyFirst : Bool) (key el : Val) : M ε Int :=
+  if keyFirst then compare cmp key el else compare cmp el key
+
 def ldInt (l : List Int) (i : Int) : M ε Int := fun e c =>
   if 0 ≤ i ∧ i < l.length then .ok (l.getD i.toNat 0) e c else .abort
 
@@ -228,7 +231,7 @@ def gallopPhase (a : Arr) (key : Val) (keyFirst plus breakNeg : Bool) (base hint
     (lastOfs offset : Nat) : M ε (Nat × Nat) :=
   if _h : (offset : Int) < maxOfs then do
     let el ← jsAny (← ld a (if plus then base + hint + offset else base + hint - offset))
-    let order ← if keyFirst then compare cmp key el else compare cmp el key
+    let order ← compareKey cmp keyFirst key el
     if (if breakNeg then decide (order < 0) else decide (0 ≤ order)) = true then
       pure (lastOfs, offset)
     else
@@ -244,7 +247,7 @@ def gallopSearch (a : Arr) (key : Val) (keyFirst : Bool) (base lastOfs offset : 
   if h : lastOfs < offset then do
     let m := lastOfs + (offset - lastOfs) / 2
     let el ← jsAny (← ld a (base + m))
-    let order ← if keyFirst then compare cmp key el else compare cmp el key
+    let order ← compareKey cmp keyFirst key el
     if decide (order < 0) = keyFirst then gallopSearch a key keyFirst base lastOfs m
     else gallopSearch a key keyFirst base (m + 1) offset
   else pure (lastOfs, offset)
@@ -255,7 +258,7 @@ def gallop (isRight : Bool) (a : Arr) (key : Val) (base length hint : Int) : M �
   dcheck (0 < length ∧ 0 ≤ base)
   dcheck (0 ≤ hint ∧ hint < length)
   let bh ← jsAny (← ld a (base + hint))
-  let order ← if isRight then compare cmp key bh else compare cmp bh key
+  let order ← compareKey cmp isRight key bh
   let neg := decide (order < 0)
   let plus := neg != isRight
   let maxOfs := if plus then length - hint else hint + 1

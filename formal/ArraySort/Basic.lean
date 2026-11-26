@@ -116,6 +116,14 @@ theorem good_mv {a b : Arr} {i j : Int} {Q : Unit → ε → Core → Prop} {e :
   unfold compare
   split <;> simp_all [Res.Good]
 
+@[simp] theorem good_compareKey {cmp : Cmp ε} {keyFirst : Bool} {key el : Val}
+    {Q : Int → ε → Core → Prop} {e : ε} {c : Core} :
+    ((compareKey cmp keyFirst key el) e c).Good Q ↔
+      ∀ o e', cmp e (if keyFirst then key else el) (if keyFirst then el else key) = some (o, e') →
+        Q o e' c := by
+  unfold compareKey
+  cases keyFirst <;> simp
+
 @[simp] theorem good_ldInt {l : List Int} {i : Int} {Q : Int → ε → Core → Prop} {e : ε}
     {c : Core} : ((ldInt l i) e c).Good Q ↔ (0 ≤ i ∧ i < l.length) ∧ Q (l.getD i.toNat 0) e c := by
   unfold ldInt
@@ -370,6 +378,11 @@ theorem over_cons {l s : List α} {pos : Nat} {x : α} (hp : 0 < pos)
       · simp [h3, Ne.symm h4, show ¬ j < pos by omega, h5,
           show ¬ j < pos - 1 + (s.length + 1) by omega]
 
+theorem over_cons' {l s : List α} {p : Nat} {x : α} (h : p + 1 + s.length ≤ l.length) :
+    (over l (p + 1) s).set p x = over l p (x :: s) := by
+  have := over_cons (l := l) (s := s) (pos := p + 1) (x := x) (by omega) h
+  rwa [Nat.add_sub_cancel] at this
+
 theorem getElem?_over_out {l s : List α} {pos j : Nat} (h : pos + s.length ≤ l.length)
     (hj : j < pos ∨ pos + s.length ≤ j) : (over l pos s)[j]? = l[j]? := by
   rw [getElem?_over h]
@@ -421,6 +434,75 @@ theorem seg_set_cons {l : List α} {i hi : Nat} {x : α} (h1 : i < hi) (h2 : i <
   rw [set_eq_over h2, seg_over_right (by simp; omega) (by simp; omega)]
   rfl
 
+theorem seg_length_le {l : List α} {lo hi : Nat} : (seg l lo hi).length ≤ hi - lo := by
+  simp [seg, List.length_take]
+  omega
+
 end Seg
+
+structure PermOn (l l' : List (Option Val)) (lo hi : Nat) : Prop where
+  len : l'.length = l.length
+  out : ∀ i, (i < lo ∨ hi ≤ i) → l'[i]? = l[i]?
+  perm : (seg l' lo hi).Perm (seg l lo hi)
+
+def Vals (l : List (Option Val)) (lo hi : Nat) : Prop :=
+  hi ≤ l.length ∧ ∀ i, lo ≤ i → i < hi → ∃ v, l.getD i none = some v
+
+theorem PermOn.refl (l : List (Option Val)) (lo hi : Nat) : PermOn l l lo hi :=
+  ⟨rfl, fun _ _ => rfl, List.Perm.refl _⟩
+
+theorem PermOn.trans {l1 l2 l3 : List (Option Val)} {lo hi : Nat} (h1 : PermOn l1 l2 lo hi)
+    (h2 : PermOn l2 l3 lo hi) : PermOn l1 l3 lo hi :=
+  ⟨h2.len.trans h1.len, fun i hi' => (h2.out i hi').trans (h1.out i hi'), h2.perm.trans h1.perm⟩
+
+theorem PermOn.widen {l l' : List (Option Val)} {lo hi lo' hi' : Nat} (h : PermOn l l' lo hi)
+    (h1 : lo' ≤ lo) (h2 : lo ≤ hi) (h3 : hi ≤ hi') : PermOn l l' lo' hi' := by
+  refine ⟨h.len, fun i hi'' => h.out i (by omega), ?_⟩
+  rw [seg_split l' h1 (Nat.le_trans h2 h3), seg_split l' h2 h3, seg_split l h1 (Nat.le_trans h2 h3),
+    seg_split l h2 h3]
+  have e1 : seg l' lo' lo = seg l lo' lo := seg_congr fun i _ hi'' => h.out i (Or.inl hi'')
+  have e2 : seg l' hi hi' = seg l hi hi' := seg_congr fun i hi'' _ => h.out i (Or.inr hi'')
+  rw [e1, e2]
+  exact List.Perm.append_left _ (List.Perm.append_right _ h.perm)
+
+theorem PermOn.of_over {l s : List (Option Val)} {p : Nat} (h : p + s.length ≤ l.length)
+    (hp : s.Perm (seg l p (p + s.length))) : PermOn l (over l p s) p (p + s.length) := by
+  refine ⟨length_over h, fun i hi => getElem?_over_out h hi, ?_⟩
+  rw [seg_over_in h]
+  exact hp
+
+theorem PermOn.of_eq_out {l l' : List (Option Val)} {lo hi : Nat} (hlen : l'.length = l.length)
+    (hout : ∀ i, (i < lo ∨ hi ≤ i) → l'[i]? = l[i]?) (hp : (seg l' lo hi).Perm (seg l lo hi)) :
+    PermOn l l' lo hi := ⟨hlen, hout, hp⟩
+
+theorem getD_of_getElem? {l : List (Option Val)} {i : Nat} {x : Option Val} (h : l[i]? = some x) :
+    l.getD i none = x := by
+  rw [List.getD_eq_getElem?_getD, h]
+  rfl
+
+theorem Vals.mono {l : List (Option Val)} {lo hi a b : Nat} (h : Vals l lo hi) (h1 : lo ≤ a)
+    (h2 : b ≤ hi) : Vals l a b :=
+  ⟨Nat.le_trans h2 h.1, fun i hi1 hi2 => h.2 i (by omega) (by omega)⟩
+
+theorem Vals.of_eq_seg {l l' : List (Option Val)} {lo hi lo' hi' : Nat} (hv : Vals l lo hi)
+    (h1 : hi' ≤ l'.length) (hs : (seg l' lo' hi').Perm (seg l lo hi)) : Vals l' lo' hi' := by
+  refine ⟨h1, fun i hi1 hi2 => ?_⟩
+  have hil : i < l'.length := by omega
+  have hm : l'[i] ∈ seg l' lo' hi' := mem_seg.2 ⟨i, hi1, hi2, List.getElem?_eq_getElem hil⟩
+  obtain ⟨j, hj1, hj2, hj⟩ := mem_seg.1 (hs.mem_iff.1 hm)
+  obtain ⟨v, hv'⟩ := hv.2 j hj1 hj2
+  refine ⟨v, ?_⟩
+  rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hil, ← hv', getD_of_getElem? hj]
+  rfl
+
+theorem Vals.of_permOn {l l' : List (Option Val)} {lo hi : Nat} (hp : PermOn l l' lo hi)
+    (hv : Vals l lo hi) : Vals l' lo hi :=
+  hv.of_eq_seg (by rw [hp.len]; exact hv.1) hp.perm
+
+theorem good_bind_of {ε α β : Type} {m : M ε α} {f : α → M ε β} {P : α → ε → Core → Prop}
+    {Q : β → ε → Core → Prop} {e : ε} {c : Core} (hm : (m e c).Good P)
+    (hf : ∀ a e' c', P a e' c' → (f a e' c').Good Q) : ((m >>= f) e c).Good Q := by
+  rw [good_bind]
+  exact hm.mono hf
 
 end ArraySort
