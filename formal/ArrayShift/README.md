@@ -24,7 +24,7 @@ from `InPlace`, which this library imports.
 | `a.fast = false` | `Cast<FastJSArray>(receiver) otherwise Slow` |
 | `m.pushable = false` | `witness.EnsureArrayPushable() otherwise Slow` |
 | `ensureWritableChecked` | `EnsureWriteableFastElements` inside `EnsureArrayPushable` of the witness |
-| `b.length = 0` | `if (array.length == 0) return Undefined` |
+| `b.length = 0` | `array.length == 0`, for which the fast path returns `Undefined` |
 | `2 * (b.length - 1) + kMinAddedElementsCapacity < b.store.length` | the right-trim check, which goes to `Runtime` |
 | `kMaxCopyElements < b.length - 1` | `if (newLength > kMaxCopyElements) goto Runtime` |
 | `shiftElements` | `LoadElementOrUndefined(0)`, `MoveElements(0, 1, ...)` and `StoreHole(newLength)` of the witness |
@@ -61,7 +61,11 @@ length above `kMaxCopyElements + 1` and a backing store that would be trimmed.
 
 The array satisfies `JSArr.WF`, and `tryFast_done` also requires
 `JSArr.SlackHoles`. `tryFast_ne_abort` and `tryFast_handles` require a backing
-store length of at most `c.maxLen` and `c.maxLen ≤ c.smiMax`.
+store length of at most `c.maxLen` and `c.maxLen ≤ c.smiMax`. Both hold in V8:
+`c.maxLen` stands for `kMaxFixedArrayCapacity` in
+`src/objects/fixed-array-base.h`, 128 Mi slots, which bounds every backing
+store, and `c.smiMax` for the Smi maximum, `2^30 - 1` with the 31-bit Smis of
+`include/v8-internal.h`.
 
 ## Not modeled
 

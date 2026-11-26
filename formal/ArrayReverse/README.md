@@ -61,7 +61,10 @@ The array satisfies `JSArr.WF`, and `tryFast_done` also requires
 `JSArr.SlackHoles`. `tryFast_ne_abort` and `tryFast_handles` require a backing
 store length of at most `c.maxLen` and `c.maxLen ≤ c.smiMax`, which keep the
 `Cast<Smi>(array.length)` and the copy in `EnsureWriteableFastElements` from
-failing.
+failing. Both hold in V8: `c.maxLen` stands for `kMaxFixedArrayCapacity` in
+`src/objects/fixed-array-base.h`, 128 Mi slots, which bounds every backing
+store, and `c.smiMax` for the Smi maximum, `2^30 - 1` with the 31-bit Smis of
+`include/v8-internal.h`.
 
 ## Not modeled
 

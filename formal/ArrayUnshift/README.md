@@ -74,7 +74,11 @@ the RangeError for a capacity above `c.maxLen`.
 
 The array satisfies `JSArr.WF`, and `unshift_done` also requires
 `JSArr.SlackHoles`. `unshift_ne_abort` and `unshift_handles` require a backing
-store length of at most `c.maxLen` and `c.maxLen ≤ c.smiMax`.
+store length of at most `c.maxLen` and `c.maxLen ≤ c.smiMax`. Both hold in V8:
+`c.maxLen` stands for `kMaxFixedArrayCapacity` in
+`src/objects/fixed-array-base.h`, 128 Mi slots, which bounds every backing
+store, and `c.smiMax` for the Smi maximum, `2^30 - 1` with the 31-bit Smis of
+`include/v8-internal.h`.
 
 ## Not modeled
 
