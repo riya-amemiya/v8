@@ -26,7 +26,7 @@ map checks, the copy-on-write handling and the kind transition come from
 | `fastPath` | `ArrayPrototypeSplice` from the `kMaxSafeInteger` check to the call of `FastArraySplice` |
 | `tryFast` | `FastArraySplice` |
 | `c.smiMax < len ∨ c.smiMax < start ∨ c.smiMax < adc` | the `Cast<Smi>` of `originalLengthNumber`, `actualStartNumber` and `actualDeleteCountNumber` |
-| `c.smiMax < len + xs.length - adc` | the Smi addition `originalLength + lengthDelta` overflowing |
+| `c.smiMax < len + xs.length - adc` | the Smi addition `originalLength + lengthDelta` overflowing, which `SmiAdd` from `SMI_ARITHMETIC_BINOP` in `src/codegen/code-stub-assembler.h` does not check |
 | `a.forCopy = false` | `Cast<JSArray>`, `IsPrototypeInitialArrayPrototype`, `IsNoElementsProtectorCellInvalid`, `IsArraySpeciesProtectorCellInvalid` and `IsFastElementsKind`, the conditions of the `FastJSArrayForCopy` cast |
 | `m.pushable = false` | `EnsureArrayPushable(map) otherwise Bailout` |
 | `insertionKind`, `isSmiKind`, `isHeapNumber`, `allowDouble`, `allowNonNumber`, `transitionForInsertion` | `TransitionElementsKindForInsertionIfNeeded`, with `IsFastSmiElementsKind`, `IsHeapNumber`, `AllowDoubleElements`, `AllowNonNumberElements` and `TransitionElementsKindWithKind` |
