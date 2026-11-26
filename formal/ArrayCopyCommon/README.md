@@ -1,4 +1,4 @@
-# Lean 4 model and safety proofs for the copying helpers of the change-by-copy builtins
+# Lean 4 model and safety proofs for the copying helpers of `toReversed`, `with`, `toSpliced` and `slice`
 
 `ArrayCopyCommon` models the copying helpers and the result type that the
 builtins returning a new array share, and proves the lemmas they need about
@@ -21,7 +21,7 @@ build on it. `ArraySlice` also imports `ArrayBuild` for `CloneFastJSArray`.
 | `Result.done` | a result array, with the source array as the fast path left it |
 | `Result.slow` | the jump to the generic implementation of a builtin |
 | `Result.throws` | a JavaScript exception |
-| `Result.ub` | an access outside a backing store that is checked only with `CSA_DCHECK` |
+| `Result.ub` | undefined behavior, such as an access outside a backing store that is checked only with `CSA_DCHECK` |
 | `Result.abort` | a failed bounds check, `unreachable` or an out-of-memory abort |
 | `holeToUndef`, `getOrUndef` | reading a hole as `undefined`, as `LoadElementOrUndefined` and `ReplaceTheHoleWithUndefined` in `src/builtins/array.tq` do |
 | `isFastPacked` | `IsFastPackedElementsKind` |
@@ -48,8 +48,9 @@ the source is non-empty and copy-on-write, and otherwise a new array whose
 elements are `a.elems`.
 
 `newArray_wf`, `newArray_slack` and `newArray_elems`. A new array of a fast
-kind whose values the kind allows is well formed, has no slots past its length,
-and has the given elements. `kindOk_specSlice` shows that the values of a slice
+kind whose values the kind allows is well formed, satisfies `JSArr.SlackHoles`
+because its backing store has no slots past its length, and has the given
+elements. `kindOk_specSlice` shows that the values of a slice
 of a well-formed array are allowed by its kind.
 
 The remaining lemmas, `copyElements_eq`, `storeChecked_eq`,
