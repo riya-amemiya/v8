@@ -35,7 +35,7 @@ imports.
 | `copyForToSpliced` | `CopyFastPackedArrayForToSpliced`, with `AllocateFixedArray(kind, newLen)` and two `CopyElements`, whose ranges are checked only with `CSA_DCHECK` |
 | `fillZero` | `FillFixedArrayWithSmiZero` and `FillFixedDoubleArrayWithZero` for the slots of the inserted items |
 | `insertKind`, `isSmiKind`, `isHeapNumber`, `allowDouble`, `allowNonNumber` | `TransitionElementsKindForInsertionIfNeeded` in `array-splice.tq`, with `IsFastSmiElementsKind`, `IsHeapNumber`, `AllowDoubleElements` and `AllowNonNumberElements` |
-| `transitionCopy` | `TransitionElementsKindWithKind`, which aborts when the conversion of a backing store above `lim.maxLen` fails |
+| `transitionCopy` | `TransitionElementsKindWithKind`, the runtime call of `JSObject::TransitionElementsKind`, with `none` for an abort when a backing store above `lim.maxLen` has to be converted |
 | `insertLoop` | `InsertArgumentsIntoFastPackedArray`, whose `UnsafeCast<ElementType>` of a non-number into a `FixedDoubleArray` is undefined behavior |
 | `Result.slow` | `Slow` and `GenericArrayToSpliced` |
 | `Result.throws` | `ThrowTypeError(MessageTemplate::kInvalidArrayLength)` |
@@ -56,10 +56,12 @@ for source `src`, `src = a`, `res` is well formed, satisfies
 `newLen len args`, and its elements are `specSpliced a.elems len` applied to
 the actual start, the actual delete count and the items.
 
-`fastPath_cases` and `tryFast_cases`. The fast path throws, goes to the slow
-path, returns the empty array for a new length of 0, or returns an array of
-kind `insertKind a.kind` with the specified elements and contents its kind
-allows.
+`fastPath_cases`. Under the same hypotheses, the fast path throws, goes to the
+slow path, returns the empty `PACKED_SMI_ELEMENTS` array for a new length of 0,
+or, for a packed source kind, returns an array of kind `insertKind a.kind` with
+the specified elements whose slots are source values or inserted items.
+`tryFast_cases` states that `tryFast` goes to the slow path or returns such an
+array when `st + dc ≤ len`, `nl = len + its.length - dc` and `nl ≤ lim.maxLen`.
 
 `Examples.lean` checks that `insertLoop` is undefined behavior when it stores a
 non-number into a double copy, which is why the kind transition runs before
