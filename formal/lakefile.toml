@@ -100,3 +100,6 @@ name = "ArrayUnshift"
 
 [[lean_lib]]
 name = "ArraySplice"
+
+[[lean_lib]]
+name = "ArrayFlatMap"
