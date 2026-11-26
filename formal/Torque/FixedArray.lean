@@ -12,6 +12,9 @@ def moveElements (store : List (Option Val)) (dst src count : Nat) : List (Optio
 def ensureWritable (a : JSArr) : JSArr :=
   if a.cow then { a with cow := false, store := a.store.take a.length } else a
 
+def growTo (store : List (Option Val)) (n : Nat) : List (Option Val) :=
+  store ++ List.replicate (n - store.length) none
+
 theorem blit_spec (out : List Val) (src : List (Option Val)) (k : Nat) :
     blit (out.map some ++ List.replicate k none) out.length src =
       out.map some ++ src ++ List.replicate (k - src.length) none := by
