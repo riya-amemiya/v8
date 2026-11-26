@@ -103,3 +103,6 @@ name = "ArraySplice"
 
 [[lean_lib]]
 name = "ArrayFlatMap"
+
+[[lean_lib]]
+name = "ArrayFromCollections"
