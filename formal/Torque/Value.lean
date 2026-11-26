@@ -5,6 +5,7 @@ inductive Val where
   | num (n : Nat)
   | arr (p : Nat)
   | proxy
+  | undef
   | other
   deriving DecidableEq, Repr
 

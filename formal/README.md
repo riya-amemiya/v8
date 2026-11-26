@@ -1,9 +1,10 @@
-# Lean 4 models and safety proofs for V8 Torque builtins
+# Lean 4 models and safety proofs for V8 builtins
 
-This directory is one Lake project with three libraries. `Torque` models the
+This directory is one Lake project with four libraries. `Torque` models the
 heap objects and the Torque and CodeStubAssembler macros that several builtins
-share. `ArrayFlat` and `ArrayCopyWithin` model one builtin each on top of it and
-prove its safety properties. The proofs use only the Lean 4 core library.
+share. `ArrayFlat`, `ArrayCopyWithin` and `ArrayFill` model one builtin each on
+top of it and prove its safety properties. The proofs use only the Lean 4 core
+library.
 
 ## Checking the proofs
 
@@ -22,9 +23,9 @@ theorems reports only `propext`, `Quot.sound` and `Classical.choice`.
 | File | Contents | V8 counterpart |
 | --- | --- | --- |
 | `Torque/Value.lean` | `Val`, `Val.isSmi`, `Val.isNumber` | `Smi`, `HeapNumber`, `JSArray`, `JSProxy` and other `JSAny` values |
-| `Torque/ElementsKind.lean` | `Kind`, `Kind.isFast`, `Kind.isDouble`, `kindOk` | `ElementsKind` and the contents each kind allows |
-| `Torque/JSArray.lean` | `JSArr`, `JSArr.elems`, `JSArr.WF`, `Heap`, `HeapWF`, `Config` | `JSArray`, its backing store, the `FastJSArrayForRead`, `FastJSArray` and `FastJSArrayForCopy` casts, and copy-on-write backing stores |
-| `Torque/FixedArray.lean` | `blit`, `moveElements`, `ensureWritable` | `TorqueCopyElements`, `TorqueMoveElements` and `EnsureWriteableFastElements` |
+| `Torque/ElementsKind.lean` | `Kind`, `Kind.isFast`, `Kind.isDouble`, `kindOk`, `Kind.isHoley`, `Kind.toHoley`, `Kind.isMoreGeneral`, `Kind.moreGeneral`, `Kind.transitionTarget`, `optimalKind` | `ElementsKind`, the contents each kind allows, `GetHoleyElementsKind`, `IsMoreGeneralElementsKindTransition`, `GetMoreGeneralElementsKind`, the holey adjustment of `JSObject::TransitionElementsKind`, and `Object::OptimalElementsKind` |
+| `Torque/JSArray.lean` | `JSArr`, `JSArr.elems`, `JSArr.WF`, `JSArr.SlackHoles`, `Heap`, `HeapWF`, `Config` | `JSArray`, its backing store, the holes past its length, the `FastJSArrayForRead`, `FastJSArray` and `FastJSArrayForCopy` casts, and copy-on-write backing stores |
+| `Torque/FixedArray.lean` | `blit`, `moveElements`, `ensureWritable`, `growTo` | `TorqueCopyElements`, `TorqueMoveElements`, `EnsureWriteableFastElements`, and a backing store grown with holes |
 | `Torque/Smi.lean` | `SmiRepr`, `SmiRepr.add`, `SmiRepr.above`, `SmiRepr.greaterThan` | Smi tagging, `SmiAdd`, `SmiAbove` and `SmiGreaterThan` in `src/codegen/code-stub-assembler.h` |
 | `Torque/Machine.lean` | `Step`, `Outcome`, `run`, `Reach` | the loop structure of a builtin, its bailouts and its exits |
 
@@ -126,6 +127,8 @@ with length 3 and an empty backing store.
 
 ## Builtins
 
-`ArrayFlat/README.md` covers `TryFastFlat` in `src/builtins/array-flat.tq`, and
+`ArrayFlat/README.md` covers `TryFastFlat` in `src/builtins/array-flat.tq`,
 `ArrayCopyWithin/README.md` covers `TryFastArrayCopyWithin` in
-`src/builtins/array-copywithin.tq`.
+`src/builtins/array-copywithin.tq`, and `ArrayFill/README.md` covers
+`TryFastArrayFill` in `src/builtins/builtins-array.cc` with the elements
+accessors it calls.

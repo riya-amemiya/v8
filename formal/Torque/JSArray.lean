@@ -22,6 +22,8 @@ structure JSArr.WF (a : JSArr) : Prop where
   forCopy_fast : a.forCopy = true → a.fast = true
   cow_not_double : a.cow = true → a.kind.isDouble = false
 
+def JSArr.SlackHoles (a : JSArr) : Prop := ∀ x ∈ a.store.drop a.length, x = none
+
 abbrev Heap := Nat → JSArr
 
 def HeapWF (H : Heap) : Prop := ∀ p, (H p).WF
