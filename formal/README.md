@@ -1,9 +1,11 @@
 # Lean 4 models and safety proofs for V8 builtins
 
 This directory is one Lake project. `Torque` models the heap objects and the
-Torque and CodeStubAssembler macros that several builtins share, and
-`ArrayBuild` models the element stores and array copies that several Array
-builtins share. Every other library models one builtin on top of them and
+Torque and CodeStubAssembler macros that several builtins share. `ArrayBuild`,
+`ArrayWitness`, `ArrayCopyCommon` and `InPlace` model the element stores, the
+witness-based iteration loop, the copying helpers and the in-place mutation
+helpers that several Array builtins share. Every other library models one
+builtin, or one group of builtins that share a Torque file, on top of them and
 proves its safety properties. The proofs use only the Lean 4 core library.
 
 ## Checking the proofs
@@ -139,6 +141,31 @@ with length 3 and an empty backing store.
 | `ArrayOf` | `Array.of` | `src/builtins/array-of.tq` |
 | `ArrayFrom` | `Array.from` | `src/builtins/array-from.tq` and the array and string branches of `FastIterableToList` |
 | `ArrayIsArray` | `Array.isArray` | `src/builtins/array-isarray.tq` |
+| `ArrayFromCollections` | the Map and Set branches of `Array.from` | `FastIterableToList` in `src/builtins/builtins-iterator-gen.cc`, `MapIteratorToList` and `SetOrSetIteratorToList` in `src/builtins/builtins-collections-gen.cc` |
+| `ArrayWitness` | shared by the iteration builtins below | `FastJSArrayWitness` in `src/objects/js-array.tq` |
+| `ArrayEvery` | `Array.prototype.every` | `src/builtins/array-every.tq` |
+| `ArraySome` | `Array.prototype.some` | `src/builtins/array-some.tq` |
+| `ArrayForEach` | `Array.prototype.forEach` | `src/builtins/array-foreach.tq` |
+| `ArrayFind` | `Array.prototype.find` | `src/builtins/array-find.tq` |
+| `ArrayFindIndex` | `Array.prototype.findIndex` | `src/builtins/array-findindex.tq` |
+| `ArrayFindLast` | `Array.prototype.findLast` | `src/builtins/array-findlast.tq` |
+| `ArrayFindLastIndex` | `Array.prototype.findLastIndex` | `src/builtins/array-findlastindex.tq` |
+| `ArrayReduce` | `Array.prototype.reduce` | `src/builtins/array-reduce.tq` |
+| `ArrayReduceRight` | `Array.prototype.reduceRight` | `src/builtins/array-reduce-right.tq` |
+| `ArrayFilter` | `Array.prototype.filter` | `src/builtins/array-filter.tq` |
+| `ArrayMap` | `Array.prototype.map` | `src/builtins/array-map.tq` |
+| `ArrayFlatMap` | `Array.prototype.flatMap` | `ArrayPrototypeFlatMap` in `src/builtins/array-flat.tq` |
+| `ArrayCopyCommon` | shared by `toReversed`, `with`, `toSpliced` and `slice` | the copying helpers those builtins call |
+| `ArrayToReversed` | `Array.prototype.toReversed` | `src/builtins/array-to-reversed.tq` |
+| `ArrayWith` | `Array.prototype.with` | `src/builtins/array-with.tq` |
+| `ArrayToSpliced` | `Array.prototype.toSpliced` | `src/builtins/array-to-spliced.tq` |
+| `ArraySlice` | `Array.prototype.slice` | `src/builtins/array-slice.tq` |
+| `InPlace` | shared by `reverse`, `shift`, `unshift` and `splice` | the in-place stores, moves and transitions those builtins perform |
+| `ArrayReverse` | `Array.prototype.reverse` | `src/builtins/array-reverse.tq` |
+| `ArrayShift` | `Array.prototype.shift` | `src/builtins/array-shift.tq` |
+| `ArrayUnshift` | `Array.prototype.unshift` | `src/builtins/array-unshift.tq` |
+| `ArraySplice` | `Array.prototype.splice` | `src/builtins/array-splice.tq` |
+| `ArrayJoin` | `Array.prototype.join`, `toString` and `toLocaleString` | `src/builtins/array-join.tq` and `WriteChunkListToFlat` in `src/objects/objects.cc` |
 
 Each library has a `README.md` with the correspondence to the V8 sources, the
 theorems, the assumptions and what is not modeled.

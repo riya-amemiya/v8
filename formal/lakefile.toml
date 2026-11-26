@@ -1,6 +1,11 @@
 name = "V8Formal"
 defaultTargets = ["Torque", "ArrayFlat", "ArrayCopyWithin", "ArrayFill", "ArrayBuild",
-  "ArrayConcat", "ArrayOf", "ArrayFrom", "ArrayLastIndexOf", "ArrayAt", "ArrayIsArray"]
+  "ArrayConcat", "ArrayOf", "ArrayFrom", "ArrayLastIndexOf", "ArrayAt", "ArrayIsArray",
+  "ArrayWitness", "ArrayEvery", "ArraySome", "ArrayForEach", "ArrayFind", "ArrayFindIndex",
+  "ArrayFindLast", "ArrayFindLastIndex", "ArrayReduce", "ArrayReduceRight", "ArrayFilter",
+  "ArrayMap", "ArrayCopyCommon", "ArrayToReversed", "ArrayWith", "ArrayToSpliced", "ArraySlice",
+  "InPlace", "ArrayReverse", "ArrayShift", "ArrayUnshift", "ArraySplice", "ArrayFlatMap",
+  "ArrayFromCollections", "ArrayJoin"]
 
 [[lean_lib]]
 name = "Torque"
@@ -109,3 +114,9 @@ name = "ArrayFromCollections"
 
 [[lean_lib]]
 name = "ArrayJoin"
+
+[[lean_lib]]
+name = "ArraySort"
+
+[[lean_lib]]
+name = "ArrayFromAsync"
