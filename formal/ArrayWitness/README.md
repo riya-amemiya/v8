@@ -24,7 +24,7 @@ continuation builtin. `ArrayEvery`, `ArraySome`, `ArrayForEach`, `ArrayFind`,
 | `Post` | what a callback call hands back to the loop: its result, the array afterwards, whether its map is still the witness `map`, and whether the no-elements protector is still valid |
 | `Post.recheck` | `Recheck`, which compares `stable.map` with `map` and tests `IsNoElementsProtectorCellInvalid` |
 | `load` | `LoadElementNoHole` of both witnesses, whose `Cast<FixedDoubleArray>` or `Cast<FixedArray>` ends in `unreachable` when `hasDoubles` does not match the backing store, and whose indexed read is bounds checked |
-| `get` | `HasProperty` and `GetProperty` in the continuation builtins, with holes and indices at or past the current length absent |
+| `get` | `GetProperty` in the continuation builtins, and `HasProperty` where they test it, with holes and indices at or past the current length absent |
 | `St` | the loop state: the accumulator of the builtin, the array `Get()` returns, and whether the next `Recheck` succeeds |
 | `loop` | the shared loop: `Recheck() otherwise goto Bailout(k)`, `if (k >= fastOW.Get().length) goto Bailout(k)`, `LoadElementNoHole`, then the body of the builtin |
 | `forward`, `backward` | the index orders `0, ..., len - 1` and `len - 1, ..., 0` |

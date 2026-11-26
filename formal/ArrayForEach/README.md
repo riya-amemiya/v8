@@ -45,9 +45,9 @@ with indices `ks` and state `s`, there is `k ≤ a.length` with
 `s.arr` from the start, and the specification loop run on `ks` from `s.arr`
 gives `specForEach cb a`.
 
-`Examples.lean` checks a callback that writes into the array, which the later
-iterations observe, and bailouts after a callback that clears the array or
-makes it holey.
+`Examples.lean` checks the array left by a callback that writes into it, with
+and without holes, and bailouts after a callback that clears the array or makes
+it holey.
 
 ## Assumptions
 
