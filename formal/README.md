@@ -86,12 +86,32 @@ stays in that block, because `Join` copies ranges but not constraints, a query
 looks only at the current block, and a block spliced in after the analysis
 answers no. Both readers also require the ranges of both operands to lie in
 `Uint32`, which turns the signed `<` into the unsigned one, so they are only as
-sound as those ranges. `RangeProcessor` has an overload for
-`TruncateCheckedNumberOrOddballToInt32` that intersects the input range with
-`Int32`, which would give `[0, 2^31 - 1]` for an input in `[0, 3e9]` although
-`ToInt32(3e9)` is negative. That overload takes no `ProcessingState`, so the
-two-argument dispatch of `GraphProcessor` never selects it, and the generic
-overload gives the node the full `Int32` range instead.
+sound as those ranges.
+
+`RangeProcessor` has one overload that the dispatch never reaches. Every other
+`Process` overload takes the node and a `ProcessingState`, which is what
+`GraphProcessor` passes through `DispatchNodeBase`, but the overload for
+`TruncateCheckedNumberOrOddballToInt32` takes the node alone. The template
+overload therefore handles that node and records the full `Int32` range, and
+`GetStaticRangeFor` gives it `Int32` as well, because it is not a conversion
+node. The unreachable overload intersects the input range with `Int32`, which
+is wrong for `ToInt32`, since inputs from `2^31` to `2^32 - 1` truncate to
+negative values. An input range with a non-negative minimum and a maximum above
+`INT32_MAX`, which a tagged value from `Uint32ToNumber` can have, would come out
+non-negative, and the removal of an unsigned `CheckInt32Condition` would then
+drop the bounds check of a negative index after `i < a.length`. Adding the
+missing parameter to that overload would turn this on.
+
+The other truncating nodes get sound ranges. `TruncateUint32ToInt32`,
+`TruncateFloat64ToInt32` and `TruncateHoleyFloat64ToInt32` are not conversion
+nodes and get the full `Int32` range, the wrapping arithmetic nodes widen to
+`Int32` on overflow through `UnionUpdateTruncatingInt32`, and
+`Range::ShiftLeft` returns `All` whenever the shift can overflow. The range
+analysis and the graph optimizer that reads it run only in the Turbolev frontend
+pipeline, which `--turbolev` or `--turbolev-future` enables and which is off by
+default. `--maglev-assert` turns on `--maglev-range-verification`, which inserts
+`AssertRangeInt32` after each Int32 node whose range is neither all nor empty,
+so a wrong range for a truncation would abort at run time under that flag.
 
 When the premise fails, both fast paths access memory outside a backing store
 in a release build. `TryFastFlat` copies a `PACKED_SMI_ELEMENTS` or
