@@ -106,3 +106,6 @@ name = "ArrayFlatMap"
 
 [[lean_lib]]
 name = "ArrayFromCollections"
+
+[[lean_lib]]
+name = "ArrayJoin"
