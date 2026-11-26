@@ -1,5 +1,6 @@
 name = "V8Formal"
-defaultTargets = ["Torque", "ArrayFlat", "ArrayCopyWithin", "ArrayFill"]
+defaultTargets = ["Torque", "ArrayFlat", "ArrayCopyWithin", "ArrayFill", "ArrayBuild",
+  "ArrayConcat", "ArrayOf", "ArrayFrom", "ArrayLastIndexOf", "ArrayAt", "ArrayIsArray"]
 
 [[lean_lib]]
 name = "Torque"
@@ -12,3 +13,24 @@ name = "ArrayCopyWithin"
 
 [[lean_lib]]
 name = "ArrayFill"
+
+[[lean_lib]]
+name = "ArrayBuild"
+
+[[lean_lib]]
+name = "ArrayConcat"
+
+[[lean_lib]]
+name = "ArrayOf"
+
+[[lean_lib]]
+name = "ArrayFrom"
+
+[[lean_lib]]
+name = "ArrayLastIndexOf"
+
+[[lean_lib]]
+name = "ArrayAt"
+
+[[lean_lib]]
+name = "ArrayIsArray"
