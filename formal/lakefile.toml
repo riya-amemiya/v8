@@ -84,6 +84,9 @@ name = "ArrayWith"
 name = "ArrayToSpliced"
 
 [[lean_lib]]
+name = "ArraySlice"
+
+[[lean_lib]]
 name = "InPlace"
 
 [[lean_lib]]
