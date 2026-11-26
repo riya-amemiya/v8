@@ -463,4 +463,606 @@ theorem iterReact_agree (smiMax : Nat) (hsmi : smiMax < 2 ^ 53 - 1) {c : IterCtx
   | alValue E k => exact absurd hr id
   | alMapped E k => exact absurd hr id
 
+theorem numberOf_num (smiMax n : Nat) : (numberOf smiMax n).num = n := by
+  unfold numberOf
+  split <;> rfl
+
+theorem alHead_agree (smiMax : Nat) {E : ALRec} {c : ALCtx} (hc : ALRel smiMax E c) {k : Nat}
+    (hidx : c.index = .smi k) (hk : k ≤ E.len) (fuel : Nat) (av : JSVal) (w : W) :
+    Agrees (ALLoopRel smiMax E)
+      (alLoop smiMax E.mapfn E.thisArg E.A (fuel + 2) ⟨some .getArrayLikeValue, av, numberOf smiMax E.len, k⟩ c w)
+      (alHead E k w) := by
+  rw [alLoop]
+  simp only
+  unfold alHead
+  refine Agrees.chk (by simpa [Ty.holds, hc.arrayLike] using hc.arrayLikeRecv) ?_
+  rw [hc.arrayLike, numberOf_num]
+  by_cases hlt : k < E.len
+  · rw [ite_eq_left (by omega : (k : Int) < (E.len : Int)), ite_eq_left hlt]
+    apply Agrees.perform
+    · intro w1
+      exact Agrees.ok ⟨rfl, rfl⟩
+    · intro r w1
+      cases r with
+      | err e => exact Agrees.ok ⟨rfl, hc⟩
+      | ok v =>
+        simp only
+        rw [alAwaitPoint_eq hc.promiseFunction hc.onFulfilled hc.onRejected, omap_perform]
+        apply Agrees.perform
+        · intro w2
+          exact Agrees.ok ⟨rfl, rfl⟩
+        · intro r w2
+          cases r with
+          | err e => exact Agrees.ok ⟨rfl, { hc with }⟩
+          | ok _ => exact Agrees.ok ⟨rfl, _, rfl, { hc with }, rfl, hidx, hlt⟩
+  · rw [ite_eq_right (by omega : ¬(k : Int) < (E.len : Int)), ite_eq_right hlt, alLoop]
+    simp only
+    have hkl : k = E.len := by omega
+    rw [hkl]
+    apply Agrees.perform
+    · intro w1
+      exact Agrees.ok ⟨rfl, rfl⟩
+    · intro r w1
+      cases r with
+      | err e => exact Agrees.ok ⟨rfl, hc⟩
+      | ok _ =>
+        simp only
+        refine Agrees.chk (by simpa [Ty.holds] using hc.promise) ?_
+        exact Agrees.ok ⟨rfl, rfl⟩
+
+theorem alDefine_agree (smiMax : Nat) {E : ALRec} {c : ALCtx} (hc : ALRel smiMax E c) {k : Nat}
+    (hk : k < E.len) (fuel : Nat) (v : JSVal) (w : W) :
+    Agrees (ALLoopRel smiMax E)
+      (alLoop smiMax E.mapfn E.thisArg E.A (fuel + 3) ⟨some .addArrayLikeValueToTheArray, v, numberOf smiMax E.len, k⟩ c w)
+      (alDefine smiMax E k v w) := by
+  rw [alLoop]
+  simp only
+  unfold alDefine
+  apply Agrees.perform
+  · intro w1
+    exact Agrees.ok ⟨rfl, rfl⟩
+  · intro r w1
+    cases r with
+    | err e => exact Agrees.ok ⟨rfl, hc⟩
+    | ok _ =>
+      simp only
+      by_cases hks : k = smiMax
+      · rw [ite_eq_left hks]
+        exact Agrees.dev _ _
+      · rw [ite_eq_right hks, smiInc_of_ne hks]
+        exact alHead_agree (c := { c with index := .smi ((k + 1 : Nat) : Int) }) smiMax
+          { hc with index := rfl } rfl (by omega) fuel _ w1
+
+theorem alAfterValue_agree (smiMax : Nat) {E : ALRec} {c : ALCtx} (hc : ALRel smiMax E c) {k : Nat}
+    (hidx : c.index = .smi k) (hk : k < E.len) (fuel : Nat) (v : JSVal) (w : W) :
+    Agrees (ALLoopRel smiMax E)
+      (alLoop smiMax E.mapfn E.thisArg E.A (fuel + 4) ⟨some .checkArrayLikeValueAndMapping, v, numberOf smiMax E.len, k⟩ c w)
+      (alAfterValue smiMax E k v w) := by
+  rw [alLoop]
+  simp only
+  unfold alAfterValue
+  by_cases hm : E.mapfn = .undef
+  · rw [ite_eq_left hm, ite_eq_left hm]
+    exact alDefine_agree smiMax hc hk fuel v w
+  · rw [ite_eq_right hm, ite_eq_right hm, alLoop]
+    simp only
+    refine Agrees.chk (by simpa [Ty.holds] using mapfn_callable hc.mapfnOK hm) ?_
+    apply Agrees.perform
+    · intro w1
+      exact Agrees.ok ⟨rfl, rfl⟩
+    · intro r w1
+      cases r with
+      | err e => exact Agrees.ok ⟨rfl, hc⟩
+      | ok m =>
+        simp only
+        rw [alAwaitPoint_eq hc.promiseFunction hc.onFulfilled hc.onRejected, omap_perform]
+        apply Agrees.perform
+        · intro w2
+          exact Agrees.ok ⟨rfl, rfl⟩
+        · intro r w2
+          cases r with
+          | err e => exact Agrees.ok ⟨rfl, { hc with }⟩
+          | ok _ => exact Agrees.ok ⟨rfl, _, rfl, { hc with }, rfl, hidx, hk⟩
+
+theorem alHandler_agree (smiMax : Nat) {E : ALRec} {v : Outcome (Res ALCtx)} {s : SRes}
+    (h : Agrees (ALLoopRel smiMax E) v s) : Agrees (ALBodyRel smiMax) (obind v alHandler) s := by
+  refine h.bind ?_
+  intro a ha
+  cases a with
+  | exit x c w => exact Agrees.ok ha
+  | thrown e c w =>
+    obtain ⟨hs, hc⟩ := ha
+    rw [hs]
+    unfold alHandler alCatch
+    simp only
+    refine Agrees.chk rfl ?_
+    refine Agrees.chk (by simpa [Ty.holds] using hc.promise) ?_
+    exact Agrees.ok ⟨rfl, rfl⟩
+
+theorem alTry_eq (smiMax : Nat) {E : ALRec} {c : ALCtx} (hc : ALRel smiMax E c) {l : Label}
+    (hl : c.step = .smi l.code) {i : Int} (hi : c.index = .smi i) (w : W) :
+    alTry smiMax c w =
+      alLoop smiMax E.mapfn E.thisArg E.A 8 ⟨some l, c.awaitedValue, numberOf smiMax E.len, i⟩ c w := by
+  unfold alTry
+  rw [chk_any, chk_any, chk_true (by simpa [Ty.holds, hc.resultArray] using hc.arr),
+    chk_true (by simp [Ty.holds, hl, JSVal.isSmi]), chk_any,
+    chk_true (by simpa [Ty.holds, hc.len] using numberOf_isNumber smiMax E.len),
+    chk_true (by simp [Ty.holds, hi, JSVal.isSmi])]
+  simp [hl, hi, JSVal.num, Label.decode_code, hc.mapfn, hc.thisArg, hc.resultArray, hc.len]
+
+theorem alRejectStep_agree (smiMax : Nat) {E : ALRec} {c : ALCtx} (hc : ALRel smiMax E c) {e : JSVal}
+    (he : c.error = e) (fuel : Nat) (av : JSVal) (ix : Int) (w : W) :
+    Agrees (ALLoopRel smiMax E)
+      (alLoop smiMax E.mapfn E.thisArg E.A (fuel + 1) ⟨some .rejectPromise, av, numberOf smiMax E.len, ix⟩ c w)
+      (sReject e w) := by
+  rw [alLoop]
+  simp only
+  refine Agrees.chk rfl ?_
+  refine Agrees.chk (by simpa [Ty.holds] using hc.promise) ?_
+  rw [he]
+  exact Agrees.ok ⟨rfl, rfl⟩
+
+theorem alReact_agree (smiMax : Nat) {c : ALCtx} {st : Susp} (hr : SuspRel smiMax (.arrayLike c) st)
+    (r : Resp) (w : W) :
+    Agrees (CtxBodyRel smiMax) (react smiMax (.arrayLike c) (Event.ofResp r) w) (resume smiMax st r w) := by
+  cases st with
+  | alValue E k =>
+    obtain ⟨hc, hstep, hidx, hk⟩ := hr
+    cases r with
+    | ok v =>
+      simp only [react, Event.ofResp, resume, alOnFulfilled, alBody]
+      have hc' : ALRel smiMax E { c with awaitedValue := v } := { hc with }
+      rw [alTry_eq smiMax hc' hstep hidx]
+      exact Agrees.map (alHandler_agree smiMax (alAfterValue_agree smiMax hc' hidx hk 4 v w))
+        fun a ha => ha
+    | err e =>
+      simp only [react, Event.ofResp, resume, alOnRejected, alBody]
+      have hc' : ALRel smiMax E { c with step := .smi Label.rejectPromise.code, error := e } :=
+        { hc with }
+      rw [alTry_eq smiMax hc' rfl hidx]
+      exact Agrees.map (alHandler_agree smiMax (alRejectStep_agree smiMax hc' rfl 7 c.awaitedValue k w))
+        fun a ha => ha
+  | alMapped E k =>
+    obtain ⟨hc, hstep, hidx, hk⟩ := hr
+    cases r with
+    | ok m =>
+      simp only [react, Event.ofResp, resume, alOnFulfilled, alBody]
+      have hc' : ALRel smiMax E { c with awaitedValue := m } := { hc with }
+      rw [alTry_eq smiMax hc' hstep hidx]
+      exact Agrees.map (alHandler_agree smiMax (alDefine_agree smiMax hc' hk 5 m w)) fun a ha => ha
+    | err e =>
+      simp only [react, Event.ofResp, resume, alOnRejected, alBody]
+      have hc' : ALRel smiMax E { c with step := .smi Label.rejectPromise.code, error := e } :=
+        { hc with }
+      rw [alTry_eq smiMax hc' rfl hidx]
+      exact Agrees.map (alHandler_agree smiMax (alRejectStep_agree smiMax hc' rfl 7 c.awaitedValue k w))
+        fun a ha => ha
+  | iterNext E k => exact absurd hr id
+  | iterMapped E k => exact absurd hr id
+  | iterClose E e => exact absurd hr id
+
+theorem react_agree (smiMax : Nat) (hsmi : smiMax < 2 ^ 53 - 1) {c : Ctx} {st : Susp}
+    (hr : SuspRel smiMax c st) (r : Resp) (w : W) :
+    Agrees (CtxBodyRel smiMax) (react smiMax c (Event.ofResp r) w) (resume smiMax st r w) := by
+  cases c with
+  | iter c => exact iterReact_agree smiMax hsmi hr r w
+  | arrayLike c => exact alReact_agree smiMax hr r w
+
+theorem drive_agree (smiMax : Nat) (hsmi : smiMax < 2 ^ 53 - 1) :
+    ∀ (n : Nat) (c : Ctx) (st : Susp) (w : W), SuspRel smiMax c st →
+      (specDrive smiMax n st w).2.2 = [] →
+        drive smiMax n c w = .ok ((specDrive smiMax n st w).1, (specDrive smiMax n st w).2.1)
+  | 0, _, _, _, _, _ => rfl
+  | n + 1, c, st, w, hr, hd => by
+    obtain ⟨rs, tr⟩ := w
+    cases rs with
+    | nil => rfl
+    | cons r rs =>
+      simp only [drive, specDrive] at hd ⊢
+      generalize hres : resume smiMax st r ⟨rs, tr⟩ = res at hd ⊢
+      have hdevs : res.devs = [] := by
+        revert hd
+        cases res.out with
+        | susp s' => intro hd; exact (List.append_eq_nil_iff.mp hd).1
+        | stop x => intro hd; exact hd
+      have hag := react_agree smiMax hsmi hr r ⟨rs, tr⟩
+      rw [hres] at hag
+      obtain ⟨a, ha, hrel⟩ := hag hdevs
+      rw [ha, obind_ok]
+      obtain ⟨x, c', w'⟩ := a
+      obtain ⟨hw, hx⟩ := hrel
+      simp only at hw hx ⊢
+      cases x with
+      | suspended =>
+        obtain ⟨st', hout, hst'⟩ := hx
+        rw [hout] at hd ⊢
+        simp only at hd ⊢
+        rw [← hw]
+        have hd' : (specDrive smiMax n st' res.w).2.2 = [] := (List.append_eq_nil_iff.mp hd).2
+        exact drive_agree smiMax hsmi n c' st' res.w hst' hd'
+      | settled =>
+        rw [hx]
+        simp [hw, Exit.toEnd]
+      | exhausted =>
+        rw [hx]
+        simp [hw, Exit.toEnd]
+      | idle => exact absurd hx id
+
+def StartRel (smiMax : Nat) : Start → SRes → Prop
+  | .withCtx x c w, s => ExitRel smiMax x c w s
+  | .noCtx x w, s => s.w = w ∧ s.out = .stop x ∧ x ≠ .suspended
+
+theorem startReject_agree (smiMax : Nat) (e : JSVal) (w : W) :
+    Agrees (StartRel smiMax) (startReject e w) (sReject e w) :=
+  Agrees.ok ⟨rfl, rfl, by simp⟩
+
+theorem startExh_agree (smiMax : Nat) (w : W) : Agrees (StartRel smiMax) (startExh w) (sExh w) :=
+  Agrees.ok ⟨rfl, rfl, by simp⟩
+
+theorem getIterator_agree (smiMax : Nat) {items m : JSVal} {w : W}
+    {k1 : JSVal → JSVal → W → Outcome Start} {k2 : JSVal → JSVal → W → SRes}
+    (hk : ∀ it nx w', it.isReceiver = true → Agrees (StartRel smiMax) (k1 it nx w') (k2 it nx w')) :
+    Agrees (StartRel smiMax) (getIterator items m w k1) (getIteratorFromMethod items m w k2) := by
+  unfold getIterator getIteratorFromMethod
+  apply Agrees.perform
+  · intro w1
+    exact startExh_agree smiMax w1
+  · intro r w1
+    cases r with
+    | err e => exact startReject_agree smiMax e w1
+    | ok it =>
+      simp only
+      by_cases hit : it.isReceiver = true
+      · rw [ite_eq_left hit, ite_eq_left hit]
+        apply Agrees.perform
+        · intro w2
+          exact startExh_agree smiMax w2
+        · intro r w2
+          cases r with
+          | err e => exact startReject_agree smiMax e w2
+          | ok nx => exact hk it nx w2 hit
+      · rw [ite_eq_right hit, ite_eq_right hit]
+        exact startReject_agree smiMax _ w1
+
+theorem startIter_agree (smiMax : Nat) (hsmi : smiMax < 2 ^ 53 - 1) {inp : Input}
+    (hm : MapfnOK inp.mapfn) {it nx arr : JSVal} (hit : it.isReceiver = true)
+    (harr : arr.isReceiver = true) (w : W) :
+    Agrees (StartRel smiMax) (startIter smiMax inp it nx arr w)
+      (iterHead ⟨arr, it, nx, inp.mapfn, inp.thisArg⟩ 0 w) := by
+  have hc : IterRel ⟨arr, it, nx, inp.mapfn, inp.thisArg⟩ (initIterCtx inp it nx arr) :=
+    ⟨rfl, rfl, rfl, rfl, rfl, harr, rfl, hit, rfl, rfl, hm, rfl, rfl⟩
+  unfold startIter iterBody
+  rw [iterTry_eq smiMax hc rfl rfl]
+  exact Agrees.map (iterHandler_agree smiMax (iterHead_agree smiMax hsmi hc rfl (Nat.zero_le _) 7 _ _ _ w))
+    fun a ha => ha
+
+theorem startAL_agree (smiMax : Nat) {inp : Input} (hm : MapfnOK inp.mapfn) {al arr : JSVal}
+    {len : Nat} (hal : al.isReceiver = true) (harr : arr.isReceiver = true) (w : W) :
+    Agrees (StartRel smiMax) (startAL smiMax inp al len arr w)
+      (alHead ⟨arr, al, len, inp.mapfn, inp.thisArg⟩ 0 w) := by
+  have hc : ALRel smiMax ⟨arr, al, len, inp.mapfn, inp.thisArg⟩ (initALCtx smiMax inp al len arr) :=
+    ⟨rfl, rfl, rfl, rfl, rfl, harr, rfl, hal, rfl, rfl, hm, rfl, rfl⟩
+  unfold startAL alBody
+  rw [alTry_eq smiMax hc rfl rfl]
+  exact Agrees.map (alHandler_agree smiMax (alHead_agree smiMax hc rfl (Nat.zero_le _) 6 _ w))
+    fun a ha => ha
+
+theorem iterable_agree (smiMax : Nat) (hsmi : smiMax < 2 ^ 53 - 1) {inp : Input}
+    (hm : MapfnOK inp.mapfn) {it nx : JSVal} (hit : it.isReceiver = true) (w : W) :
+    Agrees (StartRel smiMax)
+      (createArray inp.receiver none w fun arr w => startIter smiMax inp it nx arr w)
+      (iterableBranch inp it nx w) := by
+  unfold createArray iterableBranch
+  by_cases hcn : inp.receiver.isConstructor = true
+  · rw [ite_eq_left hcn, ite_eq_left hcn]
+    apply Agrees.perform
+    · intro w1
+      exact startExh_agree smiMax w1
+    · intro r w1
+      cases r with
+      | err e => exact startReject_agree smiMax e w1
+      | ok a => exact startIter_agree smiMax hsmi hm hit (toReceiver_isReceiver a) w1
+  · rw [ite_eq_right hcn, ite_eq_right hcn]
+    apply Agrees.perform
+    · intro w1
+      exact startExh_agree smiMax w1
+    · intro r w1
+      cases r with
+      | err e => exact startReject_agree smiMax e w1
+      | ok a => exact startIter_agree smiMax hsmi hm hit (toReceiver_isReceiver a) w1
+
+theorem arrayLike_agree (smiMax : Nat) {inp : Input} (hm : MapfnOK inp.mapfn) (w : W) :
+    Agrees (StartRel smiMax)
+      (perform (.getLength inp.items.toReceiver) w startExh fun r w =>
+        match r with
+        | .err e => startReject e w
+        | .ok lv =>
+          createArray inp.receiver (some lv.lengthOf) w fun arr w =>
+            startAL smiMax inp inp.items.toReceiver lv.lengthOf arr w)
+      (arrayLikeBranch inp w) := by
+  unfold arrayLikeBranch
+  apply Agrees.perform
+  · intro w1
+    exact startExh_agree smiMax w1
+  · intro r w1
+    cases r with
+    | err e => exact startReject_agree smiMax e w1
+    | ok lv =>
+      simp only
+      unfold createArray
+      by_cases hcn : inp.receiver.isConstructor = true
+      · rw [ite_eq_left hcn, ite_eq_left hcn]
+        apply Agrees.perform
+        · intro w2
+          exact startExh_agree smiMax w2
+        · intro r w2
+          cases r with
+          | err e => exact startReject_agree smiMax e w2
+          | ok a => exact startAL_agree smiMax hm (toReceiver_isReceiver _) (toReceiver_isReceiver a) w2
+      · rw [ite_eq_right hcn, ite_eq_right hcn]
+        simp only [Option.getD]
+        apply Agrees.perform
+        · intro w2
+          exact startExh_agree smiMax w2
+        · intro r w2
+          cases r with
+          | err e => exact startReject_agree smiMax e w2
+          | ok a => exact startAL_agree smiMax hm (toReceiver_isReceiver _) (toReceiver_isReceiver a) w2
+
+theorem arrayFromAsync_agree (smiMax : Nat) (hsmi : smiMax < 2 ^ 53 - 1) (inp : Input) (w : W) :
+    Agrees (StartRel smiMax) (arrayFromAsync smiMax inp w) (fromAsync inp w) := by
+  unfold arrayFromAsync fromAsync
+  by_cases hmap : inp.mapfn ≠ .undef ∧ inp.mapfn.isCallable = false
+  · rw [ite_eq_left hmap, ite_eq_left hmap]
+    exact startReject_agree smiMax _ w
+  · rw [ite_eq_right hmap, ite_eq_right hmap]
+    have hm := mapfnOK_of hmap
+    apply Agrees.perform
+    · intro w1
+      exact startExh_agree smiMax w1
+    · intro r w1
+      cases r with
+      | err e => exact startReject_agree smiMax e w1
+      | ok m =>
+        simp only
+        by_cases hn : m.isNullish = true
+        · rw [ite_eq_left hn, ite_eq_left hn]
+          apply Agrees.perform
+          · intro w2
+            exact startExh_agree smiMax w2
+          · intro r w2
+            cases r with
+            | err e => exact startReject_agree smiMax e w2
+            | ok m' =>
+              simp only
+              by_cases hn' : m'.isNullish = true
+              · rw [ite_eq_left hn', ite_eq_left hn']
+                exact arrayLike_agree smiMax hm w2
+              · rw [ite_eq_right hn', ite_eq_right hn']
+                by_cases hc' : m'.isCallable = true
+                · rw [ite_eq_left hc', ite_eq_left hc']
+                  refine getIterator_agree smiMax ?_
+                  intro it nx w3 _
+                  exact Agrees.dev _ _
+                · rw [ite_eq_right hc', ite_eq_right hc']
+                  exact startReject_agree smiMax _ w2
+        · rw [ite_eq_right hn, ite_eq_right hn]
+          by_cases hc : m.isCallable = true
+          · rw [ite_eq_left hc, ite_eq_left hc]
+            refine getIterator_agree smiMax ?_
+            intro it nx w2 hit
+            exact iterable_agree smiMax hsmi hm hit w2
+          · rw [ite_eq_right hc, ite_eq_right hc]
+            exact startReject_agree smiMax _ w1
+
+theorem spec_agreement {smiMax fuel : Nat} {inp : Input} {rs : List Resp}
+    (hsmi : smiMax < 2 ^ 53 - 1) (hdev : (specRun smiMax fuel inp rs).2.2 = []) :
+    run smiMax fuel inp rs = .ok ((specRun smiMax fuel inp rs).1, (specRun smiMax fuel inp rs).2.1) := by
+  unfold run specRun at *
+  simp only at hdev ⊢
+  generalize hres : fromAsync inp ⟨rs, []⟩ = res at hdev ⊢
+  have hdevs : res.devs = [] := by
+    revert hdev
+    cases res.out with
+    | susp s => intro hd; exact (List.append_eq_nil_iff.mp hd).1
+    | stop x => intro hd; exact hd
+  have hag := arrayFromAsync_agree smiMax hsmi inp ⟨rs, []⟩
+  rw [hres] at hag
+  obtain ⟨st, hst, hrel⟩ := hag hdevs
+  rw [hst, obind_ok]
+  cases st with
+  | withCtx x c w =>
+    obtain ⟨hw, hx⟩ := hrel
+    cases x with
+    | suspended =>
+      obtain ⟨s, hout, hs⟩ := hx
+      rw [hout] at hdev ⊢
+      simp only at hdev ⊢
+      rw [← hw]
+      rw [drive_agree smiMax hsmi fuel c s res.w hs (List.append_eq_nil_iff.mp hdev).2, omap_ok]
+    | settled =>
+      rw [hx]
+      simp [hw, Exit.toEnd]
+    | exhausted =>
+      rw [hx]
+      simp [hw, Exit.toEnd]
+    | idle => exact absurd hx id
+  | noCtx x w =>
+    obtain ⟨hw, hout, hx⟩ := hrel
+    rw [hout]
+    cases x with
+    | suspended => exact absurd rfl hx
+    | settled => simp [hw]
+    | exhausted => simp [hw]
+    | idle => simp [hw]
+
+theorem perform_cons {β : Type} (o : Op) (r : Resp) (rs : List Resp) (tr : List Op) (exh : W → β)
+    (k : Resp → W → β) : perform o ⟨r :: rs, tr⟩ exh k = k r ⟨rs, o :: tr⟩ := rfl
+
+def ALClean (smiMax : Nat) : Susp → Prop
+  | .alValue E k => k < E.len ∧ E.len ≤ smiMax
+  | .alMapped E k => k < E.len ∧ E.len ≤ smiMax
+  | _ => False
+
+def Clean (smiMax : Nat) (s : SRes) : Prop := s.devs = [] ∧ ∀ st, s.out = .susp st → ALClean smiMax st
+
+theorem clean_reject (smiMax : Nat) (e : JSVal) (w : W) : Clean smiMax (sReject e w) :=
+  ⟨rfl, fun _ h => nomatch h⟩
+
+theorem clean_resolve (smiMax : Nat) (a : JSVal) (w : W) : Clean smiMax (sResolve a w) :=
+  ⟨rfl, fun _ h => nomatch h⟩
+
+theorem clean_exh (smiMax : Nat) (w : W) : Clean smiMax (sExh w) := ⟨rfl, fun _ h => nomatch h⟩
+
+theorem alHead_clean (smiMax : Nat) {E : ALRec} (k : Nat) (hl : E.len ≤ smiMax) (w : W) :
+    Clean smiMax (alHead E k w) := by
+  unfold alHead
+  split
+  · rename_i hlt
+    apply perform_ind
+    · intro w1 _
+      exact clean_exh smiMax w1
+    · intro r w1 _
+      cases r with
+      | err e => exact clean_reject smiMax e w1
+      | ok v =>
+        apply perform_ind
+        · intro w2 _
+          exact clean_exh smiMax w2
+        · intro r w2 _
+          cases r with
+          | err e => exact clean_reject smiMax e w2
+          | ok _ =>
+            refine ⟨rfl, fun st h => ?_⟩
+            cases h
+            exact ⟨hlt, hl⟩
+  · apply perform_ind
+    · intro w1 _
+      exact clean_exh smiMax w1
+    · intro r w1 _
+      cases r with
+      | err e => exact clean_reject smiMax e w1
+      | ok _ => exact clean_resolve smiMax _ w1
+
+theorem alDefine_clean (smiMax : Nat) {E : ALRec} {k : Nat} (hk : k < E.len) (hl : E.len ≤ smiMax)
+    (v : JSVal) (w : W) : Clean smiMax (alDefine smiMax E k v w) := by
+  unfold alDefine
+  apply perform_ind
+  · intro w1 _
+    exact clean_exh smiMax w1
+  · intro r w1 _
+    cases r with
+    | err e => exact clean_reject smiMax e w1
+    | ok _ =>
+      simp only
+      rw [ite_eq_right (by omega)]
+      exact alHead_clean smiMax (k + 1) hl w1
+
+theorem alAfterValue_clean (smiMax : Nat) {E : ALRec} {k : Nat} (hk : k < E.len)
+    (hl : E.len ≤ smiMax) (v : JSVal) (w : W) : Clean smiMax (alAfterValue smiMax E k v w) := by
+  unfold alAfterValue
+  split
+  · exact alDefine_clean smiMax hk hl v w
+  · apply perform_ind
+    · intro w1 _
+      exact clean_exh smiMax w1
+    · intro r w1 _
+      cases r with
+      | err e => exact clean_reject smiMax e w1
+      | ok m =>
+        apply perform_ind
+        · intro w2 _
+          exact clean_exh smiMax w2
+        · intro r w2 _
+          cases r with
+          | err e => exact clean_reject smiMax e w2
+          | ok _ =>
+            refine ⟨rfl, fun st h => ?_⟩
+            cases h
+            exact ⟨hk, hl⟩
+
+theorem resume_clean (smiMax : Nat) {st : Susp} (h : ALClean smiMax st) (r : Resp) (w : W) :
+    Clean smiMax (resume smiMax st r w) := by
+  cases st with
+  | alValue E k =>
+    cases r with
+    | ok v => exact alAfterValue_clean smiMax h.1 h.2 v w
+    | err e => exact clean_reject smiMax e w
+  | alMapped E k =>
+    cases r with
+    | ok m => exact alDefine_clean smiMax h.1 h.2 m w
+    | err e => exact clean_reject smiMax e w
+  | iterNext E k => exact absurd h id
+  | iterMapped E k => exact absurd h id
+  | iterClose E e => exact absurd h id
+
+theorem specDrive_clean (smiMax : Nat) :
+    ∀ (n : Nat) (st : Susp) (w : W), ALClean smiMax st → (specDrive smiMax n st w).2.2 = []
+  | 0, _, _, _ => rfl
+  | n + 1, st, w, h => by
+    obtain ⟨rs, tr⟩ := w
+    cases rs with
+    | nil => rfl
+    | cons r rs =>
+      simp only [specDrive]
+      obtain ⟨hd, hs⟩ := resume_clean smiMax h r ⟨rs, tr⟩
+      generalize resume smiMax st r ⟨rs, tr⟩ = res at hd hs ⊢
+      cases hout : res.out with
+      | susp st' =>
+        simp only [hd, List.nil_append]
+        exact specDrive_clean smiMax n st' res.w (hs st' hout)
+      | stop x => exact hd
+
+theorem arrayLikeBranch_clean (smiMax : Nat) (inp : Input) (lv : JSVal) (rest : List Resp)
+    (tr : List Op) (hl : lv.lengthOf ≤ smiMax) :
+    Clean smiMax (arrayLikeBranch inp ⟨.ok lv :: rest, tr⟩) := by
+  unfold arrayLikeBranch
+  rw [perform_cons]
+  simp only
+  split
+  · apply perform_ind
+    · intro w1 _
+      exact clean_exh smiMax w1
+    · intro r w1 _
+      cases r with
+      | err e => exact clean_reject smiMax e w1
+      | ok a => exact alHead_clean smiMax 0 hl w1
+  · apply perform_ind
+    · intro w1 _
+      exact clean_exh smiMax w1
+    · intro r w1 _
+      cases r with
+      | err e => exact clean_reject smiMax e w1
+      | ok a => exact alHead_clean smiMax 0 hl w1
+
+theorem fromAsync_arrayLike_clean (smiMax : Nat) (inp : Input) {m m' lv : JSVal}
+    (hm : m.isNullish = true) (hm' : m'.isNullish = true) (hl : lv.lengthOf ≤ smiMax)
+    (rest : List Resp) : Clean smiMax (fromAsync inp ⟨.ok m :: .ok m' :: .ok lv :: rest, []⟩) := by
+  unfold fromAsync
+  split
+  · exact clean_reject smiMax _ _
+  · rw [perform_cons]
+    simp only
+    rw [ite_eq_left hm, perform_cons]
+    simp only
+    rw [ite_eq_left hm']
+    exact arrayLikeBranch_clean smiMax inp lv rest _ hl
+
+theorem spec_agreement_arrayLike {smiMax fuel : Nat} {inp : Input} {m m' lv : JSVal}
+    {rest : List Resp} (hsmi : smiMax < 2 ^ 53 - 1) (hm : m.isNullish = true)
+    (hm' : m'.isNullish = true) (hl : lv.lengthOf ≤ smiMax) :
+    run smiMax fuel inp (.ok m :: .ok m' :: .ok lv :: rest) =
+      .ok ((specRun smiMax fuel inp (.ok m :: .ok m' :: .ok lv :: rest)).1,
+        (specRun smiMax fuel inp (.ok m :: .ok m' :: .ok lv :: rest)).2.1) := by
+  apply spec_agreement hsmi
+  obtain ⟨hd, hs⟩ := fromAsync_arrayLike_clean smiMax inp hm hm' hl rest
+  unfold specRun
+  simp only
+  generalize fromAsync inp ⟨.ok m :: .ok m' :: .ok lv :: rest, []⟩ = res at hd hs ⊢
+  cases hout : res.out with
+  | susp st =>
+    simp only [hd, List.nil_append]
+    exact specDrive_clean smiMax fuel st res.w (hs st hout)
+  | stop x => exact hd
+
 end ArrayFromAsync

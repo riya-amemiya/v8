@@ -5,7 +5,7 @@ defaultTargets = ["Torque", "ArrayFlat", "ArrayCopyWithin", "ArrayFill", "ArrayB
   "ArrayFindLast", "ArrayFindLastIndex", "ArrayReduce", "ArrayReduceRight", "ArrayFilter",
   "ArrayMap", "ArrayCopyCommon", "ArrayToReversed", "ArrayWith", "ArrayToSpliced", "ArraySlice",
   "InPlace", "ArrayReverse", "ArrayShift", "ArrayUnshift", "ArraySplice", "ArrayFlatMap",
-  "ArrayFromCollections", "ArrayJoin"]
+  "ArrayFromCollections", "ArrayJoin", "ArrayFromAsync"]
 
 [[lean_lib]]
 name = "Torque"

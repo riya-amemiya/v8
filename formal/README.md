@@ -166,6 +166,7 @@ with length 3 and an empty backing store.
 | `ArrayUnshift` | `Array.prototype.unshift` | `src/builtins/array-unshift.tq` |
 | `ArraySplice` | `Array.prototype.splice` | `src/builtins/array-splice.tq` |
 | `ArrayJoin` | `Array.prototype.join`, `toString` and `toLocaleString` | `src/builtins/array-join.tq` and `WriteChunkListToFlat` in `src/objects/objects.cc` |
+| `ArrayFromAsync` | `Array.fromAsync` | `src/builtins/array-from-async.tq` |
 
 Each library has a `README.md` with the correspondence to the V8 sources, the
 theorems, the assumptions and what is not modeled.
