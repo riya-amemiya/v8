@@ -101,16 +101,18 @@ theorem perm_facts {l l' : List (Option Val)} {vs : List Val} {n : Nat} (hw : se
   simpa using this
 
 theorem intoCopy_good {cfg : Cfg} {env : Env} {user : Bool} {n nu sortLength : Nat} {vs : List Val}
-    {e : Ext} {c : Core} (hsm : cfg.smiMax < 2 ^ 31) (hn : n ≤ cfg.smiMax)
+    {R : List Val → Prop} {e : Ext} {c : Core} (hsm : cfg.smiMax < 2 ^ 31) (hn : n ≤ cfg.smiMax)
     (hnl : n ≤ c.work.length) (hw : seg c.work 0 n = vs.map some) (hsz : c.size = 0)
-    (hs : sortLength = n + nu) :
-    ((intoCopy cfg env user n nu sortLength) e c).Good (fun a _ _ => ∃ vs' : List Val, vs'.Perm vs ∧
+    (hs : sortLength = n + nu)
+    (hR : ∀ a e' c', (sortCore (sortCompare env user) cfg.smiMax (n : Int)) e c = .ok a e' c' →
+      R ((seg c'.work 0 n).filterMap id)) :
+    ((intoCopy cfg env user n nu sortLength) e c).Good (fun a _ _ => ∃ vs' : List Val, vs'.Perm vs ∧ R vs' ∧
       a.store = vs'.map some ++ List.replicate nu (some .undef) ∧ a.length = sortLength) := by
   have hv : Vals c.work 0 n := ⟨hnl, fun i _ hi => ⟨_, getD_seg_map hnl hw hi⟩⟩
   unfold intoCopy
   rw [good_bind]
-  refine (sortCore_good (sortCompare env user) cfg.smiMax hn hsm (e := e) hv hsz).mono ?_
-  rintro _ e2 c2 hp
+  refine (good_and_ok (sortCore_good (sortCompare env user) cfg.smiMax hn hsm (e := e) hv hsz) hR).mono ?_
+  rintro _ e2 c2 ⟨hp, hR2⟩
   obtain ⟨hw2, hvp⟩ := perm_facts hw hp
   have hnl2 : n ≤ c2.work.length := by rw [hp.len]; exact hnl
   have htake : c2.work.take n = ((seg c2.work 0 n).filterMap id).map some := by
@@ -124,7 +126,7 @@ theorem intoCopy_good {cfg : Cfg} {env : Env} {user : Bool} {n nu sortLength : N
     split
     · refine (copyToNewFast_good (Or.inr rfl) hs hm hnl2 (Or.inr rfl)).mono ?_
       rintro a e' c' ⟨h3, h4⟩
-      exact ⟨_, hvp, by rw [h3, htake], h4⟩
+      exact ⟨_, hvp, hR2, by rw [h3, htake], h4⟩
     · next hnu =>
       simp only [good_bind, good_getCore, good_dcheck]
       refine ⟨hnl2, ?_⟩
@@ -135,12 +137,12 @@ theorem intoCopy_good {cfg : Cfg} {env : Env} {user : Bool} {n nu sortLength : N
       refine (copyToNewFast_good ?_ hs hm hnl2 (Or.inl (by simpa using hnu))).mono ?_
       · cases allSmi <;> simp
       · rintro a e'' c'' ⟨h3, h4⟩
-        exact ⟨_, hvp, by rw [h3, htake], h4⟩
+        exact ⟨_, hvp, hR2, by rw [h3, htake], h4⟩
   · rw [good_bind]
     refine (slowCopy_good hv2 (n - 0) 0 [] rfl (Nat.zero_le _)).mono ?_
     rintro r e' c' ⟨-, -, h3⟩
     rw [good_pure]
-    refine ⟨_, hvp, ?_, rfl⟩
+    refine ⟨_, hvp, hR2, ?_, rfl⟩
     simp only
     rw [h3, List.nil_append, show sortLength - n = nu by omega, ← hw2]
 

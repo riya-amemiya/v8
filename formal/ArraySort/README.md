@@ -29,6 +29,15 @@ right number of `undefined` stores and deletes.
 | `ArraySort/Tail.lean` | `CheckAccessor` and `ArrayPowerSortTail` |
 | `ArraySort/ToSorted.lean` | `ArrayPowerSortIntoCopy` and its copy macros |
 | `ArraySort/Safety.lean` | The theorems about the entry points |
+| `ArraySort/Order.lean` | Total preorders, the stable merge, and `mergeSort` of a concatenation |
+| `ArraySort/Post.lean` | The partial correctness predicate `Res.Post` and the comparator hypothesis `CmpOK` |
+| `ArraySort/SortGallop.lean` | Exact results of `GallopLeft` and `GallopRight` on a sorted run |
+| `ArraySort/SortRun.lean` | Sortedness of `BinaryInsertionSort`, `CountAndMakeRun` and `ReverseRange` |
+| `ArraySort/SortMergeLow.lean` | `MergeLow` computes the stable merge |
+| `ArraySort/SortMergeHigh.lean` | `MergeHigh` computes the stable merge |
+| `ArraySort/SortStack.lean` | `MergeAt` trims and merges two runs stably |
+| `ArraySort/SortImpl.lean` | The run stack invariant through `ArrayPowerSortImpl` |
+| `ArraySort/Sorted.lean` | Sortedness and stability of the entry points |
 | `ArraySort/Examples.lean` | Executable `#guard` checks |
 
 ## Correspondence with the Torque sources
@@ -117,9 +126,45 @@ the values in `[0, len)` of the snapshot.
 `continueAfterCallback_safe` and `continueAfterCallback_perm`. The same after
 `ToNumber` of the comparator result.
 
-Sortedness and stability under a consistent comparator are not proven.
-`Examples.lean` checks them on concrete inputs, including a comparator that
-compares keys with many duplicates against the stable `List.mergeSort`.
+`sortCore_sorted`. If `le` is a total preorder (`TotalPreorder le`) and every
+answer of the comparator is negative exactly when `le y x = false`
+(`CmpOK le cmp`), the core sort additionally leaves `[0, n)` equal to
+`msort le` of the input region, where `msort le` is `List.mergeSort` under the
+order `le` lifted to the slots. Because `List.mergeSort` is stable, this states
+sortedness and stability at once: equivalent values keep their input order.
+
+`arraySort_sorted`. Under the assumptions of `arraySort_perm` and `CmpOK` for the
+comparator the call uses, the write-back log is
+`writeLog (vals.mergeSort le) u len`.
+
+`arrayToSorted_sorted`. Under the assumptions of `arrayToSorted_perm` and
+`CmpOK`, the new array's backing store is `(vals.mergeSort le).map some`
+followed by `u` copies of `undefined`.
+
+`continueFromSnapshot_sorted`. Under the assumptions of
+`continueFromSnapshot_perm` and `CmpOK`, the continuation appends
+`writeLog (snapshot.mergeSort le) 0 len`.
+
+`cmpOK_user` and `cmpOK_default` reduce `CmpOK` to the oracles: for a user
+comparator, `env.call` returns a negative number exactly when `le y x = false`
+and NaN never stands for "less"; for the default comparator, the same holds for
+`SmiLexicographicCompare` on Smi pairs and for `env.str` on the other pairs.
+
+The order proofs follow the merges step by step. Each run on the stack holds
+`msort le` of its input range. `GallopLeft` and `GallopRight` return exactly
+the boundary of the elements strictly below, or at most, the key. `MergeLow`
+and `MergeHigh` keep the invariant that the merged output so far, followed by
+the stable merge of the remaining parts of both runs, is the stable merge of
+the two runs, including the exits that copy the last element of one run and the
+initial trimming in `MergeAt`. A strictly descending run reversed by
+`CountAndMakeRun` is the stable sort of that run because it contains no two
+equivalent elements. The library lemma `msort_append` proves that the stable
+merge of the stable sorts of two adjacent ranges is the stable sort of their
+concatenation, through a characterization of the stable sort by permutation,
+sortedness and the order of each equivalence class.
+
+None of the galloping steps breaks order or stability for a consistent
+comparator.
 
 No V8 bug was found. Every `dcheck` on these paths holds, including those in
 `MergeLow`, `MergeHigh`, `GallopLeft`, `GallopRight`, `Copy`, `MergeAt`,
@@ -172,6 +217,14 @@ permutation of the copied elements at every deoptimization point.
 `MaglevGraphBuilder::TryReduceArrayPrototypeSort`
 (`src/maglev/maglev-graph-builder.cc` line 9654) follows the same scheme with
 the same constant at line 9794.
+
+The sortedness theorems assume `TotalPreorder le` and `CmpOK le cmp`. The model
+of the comparator never sees the work array or the temp array, so a comparator
+with side effects on the receiver satisfies them as long as its answers depend
+only on the two values. Every comparison in the Torque code tests only
+`order < 0` or `order >= 0` (`array-sort.tq` lines 641, 699 to 709, 827 to 894,
+927 to 992, 1052 and 1184, modeled by `compare` and `compareKey`), so the sign
+of the answer is all the hypothesis has to fix.
 
 ## Not modeled
 

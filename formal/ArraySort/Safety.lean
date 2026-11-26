@@ -126,13 +126,17 @@ theorem fast_facts {cfg : Cfg} {mp : Maps} {r : Recv} (hr : RecvOK cfg mp r) (hf
 theorem arraySort_core {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp env)
     (hsm : cfg.smiMax < 2 ^ 31) {user : Bool} {r0 : Recv} {len : Nat} (hr0 : RecvOK cfg mp r0)
     (hlen : r0.arr.fast = true → len = r0.arr.length) (h2 : 2 ≤ len) (hl : len ≤ cfg.smiMax)
-    (work : List (Option Val)) :
+    (work : List (Option Val)) {R : List Val → List Val → Prop}
+    (hR : ∀ (e : Ext) (c : Core) (vs : List Val) a e' c', vs.length ≤ c.work.length →
+      seg c.work 0 vs.length = vs.map some → c.size = 0 →
+      (sortCore (sortCompare env user) cfg.smiMax (vs.length : Int)) e c = .ok a e' c' →
+      R vs ((seg c'.work 0 vs.length).filterMap id)) :
     ((do
       let cn ← compact env false len
       sortTail cfg env user r0.map len false cn.1 cn.2 len) ⟨ensureWritableRecv r0, 0, []⟩
       (Core.init work)).Good (fun _ (e : Ext) _ => ∃ vals u e1,
         gather env false len ⟨ensureWritableRecv r0, 0, []⟩ = some (vals, u, e1) ∧
-        ∃ sorted : List Val, sorted.Perm vals ∧ e.log = writeLog sorted u len) := by
+        ∃ sorted : List Val, sorted.Perm vals ∧ R vals sorted ∧ e.log = writeLog sorted u len) := by
   obtain ⟨fm, fp, ff, fk, fl⟩ := ensureWritableRecv_fields r0
   have hr1 := ensureWritableRecv_ok hr0
   have hreach : Reach cfg mp (ensureWritableRecv r0) ⟨ensureWritableRecv r0, 0, []⟩ := ⟨hr1, id, id⟩
@@ -144,7 +148,8 @@ theorem arraySort_core {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp 
   rintro cn e1 c1 ⟨vs, u, hg, hcn, hsz, hnl, hw, hr, hlog⟩
   subst hcn
   have hgl := gather_len hl1 hg
-  refine (sortTail_good (vs := vs) (sortCompare_reach henv) hr hsm (by omega) hl hnl hw hsz hgl.1 ?_).mono ?_
+  refine (sortTail_good (vs := vs) (R := R vs) (sortCompare_reach henv) hr hsm (by omega) hl hnl hw hsz hgl.1 ?_
+    (fun a e' c' h => hR e1 c1 vs a e' c' hnl hw hsz h)).mono ?_
   · intro e' hr' _ hf hm hle
     have hok := hr'.1
     have hfe := hok.fast
@@ -175,8 +180,8 @@ theorem arraySort_core {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp 
       · have := hr'.2.2 hcw
         rw [hc1] at this
         cases this
-  · rintro _ e' _ ⟨vs', hp, hl'⟩
-    refine ⟨vs, u, e1, hg, vs', hp, ?_⟩
+  · rintro _ e' _ ⟨vs', hp, hRv, hl'⟩
+    refine ⟨vs, u, e1, hg, vs', hp, hRv, ?_⟩
     rw [hl', hlog]
     rfl
 
@@ -191,7 +196,8 @@ theorem arraySort_safe {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp 
   · trivial
   split
   · trivial
-  exact (toResult_good (arraySort_core henv hsm hr0 hlen (by omega) (by omega) _)).1
+  exact (toResult_good (arraySort_core henv hsm hr0 hlen (by omega) (by omega) _ (R := fun _ _ => True)
+    fun _ _ _ _ _ _ _ _ _ _ => trivial)).1
 
 theorem arraySort_perm {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp env)
     (hsm : cfg.smiMax < 2 ^ 31) (arg : CmpArg) {r0 : Recv} {len : Nat} (hr0 : RecvOK cfg mp r0)
@@ -206,19 +212,24 @@ theorem arraySort_perm {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp 
   · omega
   split at hd
   · cases hd
-  obtain ⟨c, hc⟩ := (toResult_good (arraySort_core henv hsm hr0 hlen h2 (by omega) _)).2 () e hd
-  exact hc
+  obtain ⟨c, vals, u, e1, hg, sorted, hp, -, hl⟩ := (toResult_good (arraySort_core henv hsm hr0 hlen h2 (by omega) _
+    (R := fun _ _ => True) fun _ _ _ _ _ _ _ _ _ _ => trivial)).2 () e hd
+  exact ⟨vals, u, e1, hg, sorted, hp, hl⟩
 
 theorem arrayToSorted_core {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp env)
     (hsm : cfg.smiMax < 2 ^ 31) {user : Bool} {r0 : Recv} {len : Nat} (hr0 : RecvOK cfg mp r0)
     (hlen : r0.arr.fast = true → len = r0.arr.length) (h2 : 2 ≤ len) (hl : len ≤ cfg.smiMax)
-    (work : List (Option Val)) :
+    (work : List (Option Val)) {R : List Val → List Val → Prop}
+    (hR : ∀ (e : Ext) (c : Core) (vs : List Val) a e' c', vs.length ≤ c.work.length →
+      seg c.work 0 vs.length = vs.map some → c.size = 0 →
+      (sortCore (sortCompare env user) cfg.smiMax (vs.length : Int)) e c = .ok a e' c' →
+      R vs ((seg c'.work 0 vs.length).filterMap id)) :
     ((do
       let cn ← compact env true len
       intoCopy cfg env user cn.1 cn.2 len) ⟨r0, 0, []⟩ (Core.init work)).Good (fun (a : JSArr) _ _ => ∃ vals u e1,
         gather env true len ⟨r0, 0, []⟩ = some (vals, u, e1) ∧
-        ∃ sorted : List Val, sorted.Perm vals ∧ a.store = sorted.map some ++ List.replicate u (some Val.undef) ∧
-          a.length = len) := by
+        ∃ sorted : List Val, sorted.Perm vals ∧ R vals sorted ∧
+          a.store = sorted.map some ++ List.replicate u (some Val.undef) ∧ a.length = len) := by
   have hreach : Reach cfg mp r0 ⟨r0, 0, []⟩ := ⟨hr0, id, id⟩
   have hl1 : r0.arr.fast = true → len ≤ r0.arr.store.length := by
     intro hf
@@ -228,9 +239,10 @@ theorem arrayToSorted_core {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg
   rintro cn e1 c1 ⟨vs, u, hg, hcn, hsz, hnl, hw, hr, hlog⟩
   subst hcn
   have hgl := gather_len hl1 hg
-  refine (intoCopy_good (user := user) (env := env) hsm (by omega) hnl hw hsz (hgl.2 rfl).symm).mono ?_
-  rintro a _ _ ⟨vs', hp, hs, hal⟩
-  exact ⟨vs, u, e1, hg, vs', hp, hs, hal⟩
+  refine (intoCopy_good (user := user) (env := env) (R := R vs) hsm (by omega) hnl hw hsz (hgl.2 rfl).symm
+    fun a e' c' h => hR e1 c1 vs a e' c' hnl hw hsz h).mono ?_
+  rintro a _ _ ⟨vs', hp, hRv, hs, hal⟩
+  exact ⟨vs, u, e1, hg, vs', hp, hRv, hs, hal⟩
 
 theorem arrayToSorted_safe {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp env)
     (hsm : cfg.smiMax < 2 ^ 31) (arg : CmpArg) {r0 : Recv} {len : Nat} (hr0 : RecvOK cfg mp r0)
@@ -245,7 +257,8 @@ theorem arrayToSorted_safe {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg
   · split <;> trivial
   split
   · trivial
-  exact (toResult_good (arrayToSorted_core henv hsm hr0 hlen (by omega) (by omega) _)).1
+  exact (toResult_good (arrayToSorted_core henv hsm hr0 hlen (by omega) (by omega) _ (R := fun _ _ => True)
+    fun _ _ _ _ _ _ _ _ _ _ => trivial)).1
 
 theorem arrayToSorted_perm {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg mp env)
     (hsm : cfg.smiMax < 2 ^ 31) (arg : CmpArg) {r0 : Recv} {len : Nat} (hr0 : RecvOK cfg mp r0)
@@ -263,8 +276,9 @@ theorem arrayToSorted_perm {cfg : Cfg} {mp : Maps} {env : Env} (henv : EnvOK cfg
   · omega
   split at hd
   · cases hd
-  obtain ⟨c, hc⟩ := (toResult_good (arrayToSorted_core henv hsm hr0 hlen h2 (by omega) _)).2 a e hd
-  exact hc
+  obtain ⟨c, vals, u, e1, hg, sorted, hp, -, hs, hal⟩ := (toResult_good (arrayToSorted_core henv hsm hr0 hlen h2
+    (by omega) _ (R := fun _ _ => True) fun _ _ _ _ _ _ _ _ _ _ => trivial)).2 a e hd
+  exact ⟨vals, u, e1, hg, sorted, hp, hs, hal⟩
 
 theorem snapshot_vals {temp : List (Option Val)} {len : Nat} (hv : Vals temp 0 len) :
     seg temp 0 len = ((seg temp 0 len).filterMap id).map some := by
@@ -276,25 +290,28 @@ theorem snapshot_vals {temp : List (Option Val)} {len : Nat} (hv : Vals temp 0 l
 
 theorem continueFromSnapshot_core {cfg : Cfg} {env : Env} {user : Bool} {e0 : Ext}
     {temp : List (Option Val)} {len : Nat} (hsm : cfg.smiMax < 2 ^ 31) (hl : len ≤ cfg.smiMax)
-    (hv : Vals temp 0 len) :
+    (hv : Vals temp 0 len) {R : List Val → Prop}
+    (hR : ∀ a e' c', (sortCore (sortCompare env user) cfg.smiMax (len : Int)) e0 (Core.init temp) = .ok a e' c' →
+      R ((seg c'.work 0 len).filterMap id)) :
     ((sortTail cfg env user e0.recv.map len true len 0 len) e0 (Core.init temp)).Good (fun _ e _ =>
-      ∃ sorted : List Val, sorted.Perm ((seg temp 0 len).filterMap id) ∧
+      ∃ sorted : List Val, sorted.Perm ((seg temp 0 len).filterMap id) ∧ R sorted ∧
         e.log = e0.log ++ writeLog sorted 0 len) :=
   sortTail_good (I := fun _ => True) (fun _ _ _ _ _ _ _ => trivial) trivial hsm hl hl hv.1 (snapshot_vals hv) rfl
-    (by omega) (fun _ _ h => by cases h)
+    (by omega) (fun _ _ h => by cases h) hR
 
 theorem continueFromSnapshot_safe {cfg : Cfg} {env : Env} {user : Bool} {e0 : Ext}
     {temp : List (Option Val)} {len : Nat} (hsm : cfg.smiMax < 2 ^ 31) (hl : len ≤ cfg.smiMax)
     (hv : Vals temp 0 len) : (continueFromSnapshot cfg env user e0 temp len).Safe :=
-  (toResult_good (continueFromSnapshot_core hsm hl hv)).1
+  (toResult_good (continueFromSnapshot_core hsm hl hv (R := fun _ => True) fun _ _ _ _ => trivial)).1
 
 theorem continueFromSnapshot_perm {cfg : Cfg} {env : Env} {user : Bool} {e0 : Ext}
     {temp : List (Option Val)} {len : Nat} (hsm : cfg.smiMax < 2 ^ 31) (hl : len ≤ cfg.smiMax)
     (hv : Vals temp 0 len) {e : Ext} (hd : continueFromSnapshot cfg env user e0 temp len = .done () e) :
     ∃ sorted : List Val, sorted.Perm ((seg temp 0 len).filterMap id) ∧
       e.log = e0.log ++ writeLog sorted 0 len := by
-  obtain ⟨c, hc⟩ := (toResult_good (continueFromSnapshot_core (user := user) (env := env) (e0 := e0) hsm hl hv)).2 () e hd
-  exact hc
+  obtain ⟨c, sorted, hp, -, hl'⟩ := (toResult_good (continueFromSnapshot_core (user := user) (env := env) (e0 := e0)
+    hsm hl hv (R := fun _ => True) fun _ _ _ _ => trivial)).2 () e hd
+  exact ⟨sorted, hp, hl'⟩
 
 theorem continueAfterCallback_safe {cfg : Cfg} {env : Env} {user : Bool} {r0 : Recv}
     {temp : List (Option Val)} {len : Nat} {result : Val} (hsm : cfg.smiMax < 2 ^ 31) (hl : len ≤ cfg.smiMax)

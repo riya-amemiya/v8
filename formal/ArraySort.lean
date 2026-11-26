@@ -15,4 +15,13 @@ import ArraySort.Writeback
 import ArraySort.Tail
 import ArraySort.ToSorted
 import ArraySort.Safety
+import ArraySort.Order
+import ArraySort.Post
+import ArraySort.SortGallop
+import ArraySort.SortRun
+import ArraySort.SortMergeLow
+import ArraySort.SortMergeHigh
+import ArraySort.SortStack
+import ArraySort.SortImpl
+import ArraySort.Sorted
 import ArraySort.Examples

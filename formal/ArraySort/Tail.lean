@@ -244,16 +244,26 @@ theorem AccFacts.perm {cfg : Cfg} {acc : Acc} {r : Recv} {vs vs' : List Val} {nu
   · exact Or.inl h3
   · exact Or.inr ⟨h3.1, h3.2.1, fun h => h3.2.2 (by rw [← hp.length_eq]; exact h)⟩
 
+theorem good_and_ok {ε α : Type} {Q R : α → ε → Core → Prop} {r : Res ε α} (h1 : r.Good Q)
+    (h2 : ∀ a e c, r = .ok a e c → R a e c) : r.Good (fun a e c => Q a e c ∧ R a e c) := by
+  cases r with
+  | ok a e c => exact ⟨h1, h2 a e c rfl⟩
+  | throw e => trivial
+  | ub => exact h1
+  | abort => exact h1
+
 theorem sortTail_good {cfg : Cfg} {env : Env} {user : Bool} {initMap initLen : Nat} {reset : Bool}
-    {n nu sortLength : Nat} {vs : List Val} {I : Ext → Prop} {e : Ext} {c : Core}
+    {n nu sortLength : Nat} {vs : List Val} {I : Ext → Prop} {R : List Val → Prop} {e : Ext} {c : Core}
     (hI : ∀ e x y o e', I e → sortCompare env user e x y = some (o, e') → I e')
     (he : I e) (hsm : cfg.smiMax < 2 ^ 31) (hn : n ≤ cfg.smiMax) (hil : initLen ≤ cfg.smiMax)
     (hnl : n ≤ c.work.length) (hw : seg c.work 0 n = vs.map some) (hsz : c.size = 0)
     (hs : n + nu ≤ sortLength)
     (hacc : ∀ e', I e' → reset = false → e'.recv.arr.fast = true → e'.recv.map = initMap →
-      e'.recv.arr.length = initLen → AccFacts cfg (selectAcc false e'.recv) e'.recv vs nu sortLength) :
+      e'.recv.arr.length = initLen → AccFacts cfg (selectAcc false e'.recv) e'.recv vs nu sortLength)
+    (hR : ∀ a e' c', (sortCore (sortCompare env user) cfg.smiMax (n : Int)) e c = .ok a e' c' →
+      R ((seg c'.work 0 n).filterMap id)) :
     ((sortTail cfg env user initMap initLen reset n nu sortLength) e c).Good (fun _ e' _ =>
-      ∃ vs', vs'.Perm vs ∧ e'.log = e.log ++ writeLog vs' nu sortLength) := by
+      ∃ vs', vs'.Perm vs ∧ R vs' ∧ e'.log = e.log ++ writeLog vs' nu sortLength) := by
   have hJ : ∀ e1 x y o e2, (fun e' => I e' ∧ e'.log = e.log) e1 → sortCompare env user e1 x y = some (o, e2) →
       (fun e' => I e' ∧ e'.log = e.log) e2 := by
     rintro e1 x y o e2 ⟨h1, h2⟩ h
@@ -264,10 +274,10 @@ theorem sortTail_good {cfg : Cfg} {env : Env} {user : Bool} {initMap initLen : N
   have hv : Vals c.work 0 n := ⟨hnl, fun i _ hi => ⟨_, getD_seg_map hnl hw hi⟩⟩
   unfold sortTail
   rw [good_bind]
-  have h1 := good_inv (sortCore_good (sortCompare env user) cfg.smiMax hn hsm (e := e) hv hsz)
-    ((pres_sortCore _ hJ cfg.smiMax (n : Int)).apply ⟨he, rfl⟩)
+  have h1 := good_and_ok (good_inv (sortCore_good (sortCompare env user) cfg.smiMax hn hsm (e := e) hv hsz)
+    ((pres_sortCore _ hJ cfg.smiMax (n : Int)).apply ⟨he, rfl⟩)) hR
   refine h1.mono ?_
-  rintro _ e2 c2 ⟨hp, hI2, hl2⟩
+  rintro _ e2 c2 ⟨⟨hp, hI2, hl2⟩, hR2⟩
   rw [good_bind]
   refine (checkAccessor_good hil).mono ?_
   rintro ok e3 c3 ⟨he3, hc3, hok⟩
@@ -294,6 +304,6 @@ theorem sortTail_good {cfg : Cfg} {env : Env} {user : Bool} {initMap initLen : N
       obtain ⟨hf, hm, hlen⟩ := hok hres.2
       exact (hacc e2 hI2 hres.1 hf hm hlen).perm hvp
   · rintro _ e4 c4 ⟨-, hlog⟩
-    exact ⟨_, hvp, by rw [hlog, hl2]⟩
+    exact ⟨_, hvp, hR2, by rw [hlog, hl2]⟩
 
 end ArraySort
