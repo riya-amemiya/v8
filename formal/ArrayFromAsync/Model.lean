@@ -391,10 +391,12 @@ def iterCatch (c : IterCtx) (e : JSVal) (w : W) : Outcome (Exit × IterCtx × W)
     | .rejectPromise c w => iterRejectFromSlots c w
     | .exhausted c w => .ok (.exhausted, c, w)
 
+def iterHandler : Res IterCtx → Outcome (Exit × IterCtx × W)
+  | .exit x c w => .ok (x, c, w)
+  | .thrown e c w => iterCatch c e w
+
 def iterBody (smiMax : Nat) (c : IterCtx) (w : W) : Outcome (Exit × IterCtx × W) :=
-  obind (iterTry smiMax c w) fun
-    | .exit x c w => .ok (x, c, w)
-    | .thrown e c w => iterCatch c e w
+  obind (iterTry smiMax c w) iterHandler
 
 def iterOnFulfilled (smiMax : Nat) (c : IterCtx) (v : JSVal) (w : W) :
     Outcome (Exit × IterCtx × W) :=
@@ -494,10 +496,12 @@ def alCatch (c : ALCtx) (e : JSVal) (w : W) : Outcome (Exit × ALCtx × W) :=
   chk .promise c.promise fun _ =>
   .ok (.settled, c, w.emit (.reject e))
 
+def alHandler : Res ALCtx → Outcome (Exit × ALCtx × W)
+  | .exit x c w => .ok (x, c, w)
+  | .thrown e c w => alCatch c e w
+
 def alBody (smiMax : Nat) (c : ALCtx) (w : W) : Outcome (Exit × ALCtx × W) :=
-  obind (alTry smiMax c w) fun
-    | .exit x c w => .ok (x, c, w)
-    | .thrown e c w => alCatch c e w
+  obind (alTry smiMax c w) alHandler
 
 def alOnFulfilled (smiMax : Nat) (c : ALCtx) (v : JSVal) (w : W) : Outcome (Exit × ALCtx × W) :=
   alBody smiMax { c with awaitedValue := v } w
