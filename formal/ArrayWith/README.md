@@ -59,9 +59,10 @@ the same for `tryFast` with an index `idx < len`.
 The proofs rest on the copy having exactly `len` slots, so the index is inside
 the backing store and a double backing store is not `empty_fixed_array`.
 `Examples.lean` checks that `fastCreate` aborts on a double array whose backing
-store is empty, and that storing `undefined` past the backing store of a
-`HOLEY_DOUBLE_ELEMENTS` array is undefined behavior, and the kinds the runtime
-store chooses for a double and for `undefined`.
+store is empty and that storing `undefined` past the backing store of a
+`HOLEY_DOUBLE_ELEMENTS` array is undefined behavior. It also checks the kinds
+the runtime store chooses for a double, for `undefined` with and without
+undefined doubles, and for another value.
 
 ## Assumptions
 
