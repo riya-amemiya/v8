@@ -34,3 +34,63 @@ name = "ArrayAt"
 
 [[lean_lib]]
 name = "ArrayIsArray"
+
+[[lean_lib]]
+name = "ArrayWitness"
+
+[[lean_lib]]
+name = "ArrayEvery"
+
+[[lean_lib]]
+name = "ArraySome"
+
+[[lean_lib]]
+name = "ArrayForEach"
+
+[[lean_lib]]
+name = "ArrayFind"
+
+[[lean_lib]]
+name = "ArrayFindIndex"
+
+[[lean_lib]]
+name = "ArrayFindLast"
+
+[[lean_lib]]
+name = "ArrayFindLastIndex"
+
+[[lean_lib]]
+name = "ArrayReduce"
+
+[[lean_lib]]
+name = "ArrayReduceRight"
+
+[[lean_lib]]
+name = "ArrayFilter"
+
+[[lean_lib]]
+name = "ArrayMap"
+
+[[lean_lib]]
+name = "ArrayCopyCommon"
+
+[[lean_lib]]
+name = "ArrayToReversed"
+
+[[lean_lib]]
+name = "ArrayWith"
+
+[[lean_lib]]
+name = "ArrayToSpliced"
+
+[[lean_lib]]
+name = "InPlace"
+
+[[lean_lib]]
+name = "ArrayReverse"
+
+[[lean_lib]]
+name = "ArrayShift"
+
+[[lean_lib]]
+name = "ArrayUnshift"
