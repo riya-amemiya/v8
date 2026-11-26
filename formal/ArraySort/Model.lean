@@ -69,6 +69,8 @@ def abort {α : Type} : M ε α := fun _ _ => .abort
 
 def dcheck (p : Prop) [Decidable p] : M ε Unit := fun e c => if p then .ok () e c else .ub
 
+def doIf (p : Prop) [Decidable p] (m : M ε Unit) : M ε Unit := if p then m else pure ()
+
 def jsAny : Option Val → M ε Val
   | some v => pure v
   | none => ub
@@ -221,7 +223,7 @@ def countAndMakeRun (lowArg high : Int) : M ε Int := do
     let ePred ← jsAny (← ld .work lowArg)
     let order ← compare cmp eLow ePred
     let runLength ← countRunLoop cmp (decide (order < 0)) high eLow (lowArg + 2) 2
-    if order < 0 then reverseRange lowArg (lowArg + runLength) else pure ()
+    doIf (order < 0) (reverseRange lowArg (lowArg + runLength))
     pure runLength
 
 def gallopNext (maxOfs : Int) (offset : Nat) : Nat :=
@@ -298,6 +300,37 @@ section
 
 variable {ε : Type} (cmp : Cmp ε) (smiMax : Nat)
 
+inductive GStep where
+  | exit (x : Exit)
+  | cont (s : MS) (wa wb : Int)
+
+def lowGallopC (s : MS) (na nb : Int) : M ε GStep := do
+  mv .temp (s.ct + na) .work (s.dest + na + 1 + nb)
+  if s.la - na - 1 = 1 then
+    pure (.exit (.copy ⟨s.dest + na + 2 + nb, s.ct + na + 1, s.cur + 1 + nb, s.la - na - 1, s.lb - 1 - nb⟩))
+  else pure (.cont ⟨s.dest + na + 2 + nb, s.ct + na + 1, s.cur + 1 + nb, s.la - na - 1, s.lb - 1 - nb⟩ na nb)
+
+def lowGallopB (s : MS) (na : Int) : M ε GStep := do
+  mv .work s.cur .work (s.dest + na)
+  if s.lb - 1 = 0 then
+    pure (.exit (.succeed ⟨s.dest + na + 1, s.ct + na, s.cur + 1, s.la - na, s.lb - 1⟩))
+  else do
+    let nb ← gallop cmp smiMax false .work (← jsAny (← ld .temp (s.ct + na))) (s.cur + 1) (s.lb - 1) 0
+    dcheck (0 ≤ nb)
+    doIf (0 < nb) (copy .work (s.cur + 1) .work (s.dest + na + 1) nb)
+    if 0 < nb ∧ s.lb - 1 - nb = 0 then
+      pure (.exit (.succeed ⟨s.dest + na + 1 + nb, s.ct + na, s.cur + 1 + nb, s.la - na, s.lb - 1 - nb⟩))
+    else lowGallopC s na nb
+
+def lowGallopStep (s : MS) : M ε GStep := do
+  let na ← gallop cmp smiMax true .temp (← jsAny (← ld .work s.cur)) s.ct s.la 0
+  dcheck (0 ≤ na)
+  doIf (0 < na) (copy .temp s.ct .work s.dest na)
+  if 0 < na ∧ s.la - na = 1 then pure (.exit (.copy ⟨s.dest + na, s.ct + na, s.cur, s.la - na, s.lb⟩))
+  else if 0 < na ∧ s.la - na = 0 then
+    pure (.exit (.succeed ⟨s.dest + na, s.ct + na, s.cur, s.la - na, s.lb⟩))
+  else lowGallopB cmp smiMax s na
+
 def lowLoop (mg : Int) (ph : Ph) (s : MS) : M ε Exit :=
   match ph with
   | .simple wa wb =>
@@ -317,43 +350,35 @@ def lowLoop (mg : Int) (ph : Ph) (s : MS) : M ε Exit :=
         else lowLoop mg (.simple (wa + 1) 0) ⟨s.dest + 1, s.ct + 1, s.cur, s.la - 1, s.lb⟩
     else ub
   | .gallop first wa wb =>
-    if kMinGallopWins ≤ wa ∨ kMinGallopWins ≤ wb ∨ first = true then
-      if h : 1 < s.la ∧ 0 < s.lb then do
-        let mg' := max 1 (mg - 1)
-        setMinGallop mg'
-        let na ← gallop cmp smiMax true .temp (← jsAny (← ld .work s.cur)) s.ct s.la 0
-        if h1 : 0 ≤ na then do
-          if 0 < na then copy .temp s.ct .work s.dest na else pure ()
-          if 0 < na ∧ s.la - na = 1 then pure (.copy ⟨s.dest + na, s.ct + na, s.cur, s.la - na, s.lb⟩)
-          else if 0 < na ∧ s.la - na = 0 then
-            pure (.succeed ⟨s.dest + na, s.ct + na, s.cur, s.la - na, s.lb⟩)
-          else do
-            mv .work s.cur .work (s.dest + na)
-            if s.lb - 1 = 0 then
-              pure (.succeed ⟨s.dest + na + 1, s.ct + na, s.cur + 1, s.la - na, s.lb - 1⟩)
-            else do
-              let nb ← gallop cmp smiMax false .work (← jsAny (← ld .temp (s.ct + na))) (s.cur + 1)
-                (s.lb - 1) 0
-              if h2 : 0 ≤ nb then do
-                if 0 < nb then copy .work (s.cur + 1) .work (s.dest + na + 1) nb else pure ()
-                if 0 < nb ∧ s.lb - 1 - nb = 0 then
-                  pure (.succeed ⟨s.dest + na + 1 + nb, s.ct + na, s.cur + 1 + nb, s.la - na,
-                    s.lb - 1 - nb⟩)
-                else do
-                  mv .temp (s.ct + na) .work (s.dest + na + 1 + nb)
-                  if s.la - na - 1 = 1 then
-                    pure (.copy ⟨s.dest + na + 2 + nb, s.ct + na + 1, s.cur + 1 + nb, s.la - na - 1,
-                      s.lb - 1 - nb⟩)
-                  else lowLoop mg' (.gallop false na nb) ⟨s.dest + na + 2 + nb, s.ct + na + 1,
-                    s.cur + 1 + nb, s.la - na - 1, s.lb - 1 - nb⟩
-              else ub
+    if kMinGallopWins ≤ wa ∨ kMinGallopWins ≤ wb ∨ first = true then do
+      dcheck (1 < s.la ∧ 0 < s.lb)
+      setMinGallop (max 1 (mg - 1))
+      let r ← lowGallopStep cmp smiMax s
+      match r with
+      | .exit x => pure x
+      | .cont s' na nb =>
+        if _h : s'.la.toNat + s'.lb.toNat < s.la.toNat + s.lb.toNat then
+          lowLoop (max 1 (mg - 1)) (.gallop false na nb) s'
         else ub
-      else ub
     else do
       setMinGallop (mg + 1)
       lowLoop (mg + 1) (.simple 0 0) s
 termination_by 2 * (s.la.toNat + s.lb.toNat) + ph.rank
 decreasing_by all_goals simp only [Ph.rank]; omega
+
+def lowRun (s : MS) : M ε Exit :=
+  if s.lb = 0 then pure (Exit.succeed s)
+  else if s.la = 1 then pure (Exit.copy s)
+  else do
+    let mg ← getMinGallop
+    lowLoop cmp smiMax mg (.simple 0 0) s
+
+def lowFinish : Exit → M ε Unit
+  | .succeed s => if 0 < s.la then copy .temp s.ct .work s.dest s.la else pure ()
+  | .copy s => do
+    dcheck (s.la = 1 ∧ 0 < s.lb)
+    copy .work s.cur .work s.dest s.lb
+    mv .temp s.ct .work (s.dest + s.lb)
 
 def mergeLow (baseA lengthA baseB lengthB : Int) : M ε Unit := do
   dcheck (0 < lengthA ∧ 0 < lengthB)
@@ -362,18 +387,40 @@ def mergeLow (baseA lengthA baseB lengthB : Int) : M ε Unit := do
   getTempArray lengthA
   copy .work baseA .temp 0 lengthA
   mv .work baseB .work baseA
-  let s : MS := ⟨baseA + 1, 0, baseB + 1, lengthA, lengthB - 1⟩
-  let x ← if s.lb = 0 then pure (Exit.succeed s)
-    else if s.la = 1 then pure (Exit.copy s)
-    else do
-      let mg ← getMinGallop
-      lowLoop cmp smiMax mg (.simple 0 0) s
-  match x with
-  | .succeed s => if 0 < s.la then copy .temp s.ct .work s.dest s.la else pure ()
-  | .copy s => do
-    dcheck (s.la = 1 ∧ 0 < s.lb)
-    copy .work s.cur .work s.dest s.lb
-    mv .temp s.ct .work (s.dest + s.lb)
+  let x ← lowRun cmp smiMax ⟨baseA + 1, 0, baseB + 1, lengthA, lengthB - 1⟩
+  lowFinish x
+
+def highGallopC (s : MS) (na pa nb pb : Int) : M ε GStep := do
+  mv .work (s.cur - pa) .work (s.dest - pa - 1 - pb)
+  if s.la - pa - 1 = 0 then
+    pure (.exit (.succeed ⟨s.dest - pa - 2 - pb, s.ct - 1 - pb, s.cur - pa - 1, s.la - pa - 1, s.lb - 1 - pb⟩))
+  else pure (.cont ⟨s.dest - pa - 2 - pb, s.ct - 1 - pb, s.cur - pa - 1, s.la - pa - 1, s.lb - 1 - pb⟩ na nb)
+
+def highGallopB (s : MS) (na pa : Int) : M ε GStep := do
+  mv .temp s.ct .work (s.dest - pa)
+  if s.lb - 1 = 1 then pure (.exit (.copy ⟨s.dest - pa - 1, s.ct - 1, s.cur - pa, s.la - pa, s.lb - 1⟩))
+  else do
+    let k2 ← gallop cmp smiMax false .temp (← jsAny (← ld .work (s.cur - pa))) 0 (s.lb - 1) (s.lb - 2)
+    dcheck (0 ≤ k2)
+    doIf (0 < s.lb - 1 - k2) (copy .temp (s.ct - 1 - max (s.lb - 1 - k2) 0 + 1) .work
+      (s.dest - pa - 1 - max (s.lb - 1 - k2) 0 + 1) (max (s.lb - 1 - k2) 0))
+    if 0 < s.lb - 1 - k2 ∧ s.lb - 1 - max (s.lb - 1 - k2) 0 = 1 then
+      pure (.exit (.copy ⟨s.dest - pa - 1 - max (s.lb - 1 - k2) 0, s.ct - 1 - max (s.lb - 1 - k2) 0,
+        s.cur - pa, s.la - pa, s.lb - 1 - max (s.lb - 1 - k2) 0⟩))
+    else if 0 < s.lb - 1 - k2 ∧ s.lb - 1 - max (s.lb - 1 - k2) 0 = 0 then
+      pure (.exit (.succeed ⟨s.dest - pa - 1 - max (s.lb - 1 - k2) 0, s.ct - 1 - max (s.lb - 1 - k2) 0,
+        s.cur - pa, s.la - pa, s.lb - 1 - max (s.lb - 1 - k2) 0⟩))
+    else highGallopC s na pa (s.lb - 1 - k2) (max (s.lb - 1 - k2) 0)
+
+def highGallopStep (baseA : Int) (s : MS) : M ε GStep := do
+  let k ← gallop cmp smiMax true .work (← jsAny (← ld .temp s.ct)) baseA s.la (s.la - 1)
+  dcheck (0 ≤ k)
+  doIf (0 < s.la - k) (copy .work (s.cur - max (s.la - k) 0 + 1) .work (s.dest - max (s.la - k) 0 + 1)
+    (max (s.la - k) 0))
+  if 0 < s.la - k ∧ s.la - max (s.la - k) 0 = 0 then
+    pure (.exit (.succeed ⟨s.dest - max (s.la - k) 0, s.ct, s.cur - max (s.la - k) 0,
+      s.la - max (s.la - k) 0, s.lb⟩))
+  else highGallopB cmp smiMax s (s.la - k) (max (s.la - k) 0)
 
 def highLoop (baseA : Int) (mg : Int) (ph : Ph) (s : MS) : M ε Exit :=
   match ph with
@@ -394,60 +441,30 @@ def highLoop (baseA : Int) (mg : Int) (ph : Ph) (s : MS) : M ε Exit :=
         else highLoop baseA mg (.simple 0 (wb + 1)) ⟨s.dest - 1, s.ct - 1, s.cur, s.la, s.lb - 1⟩
     else ub
   | .gallop first wa wb =>
-    if kMinGallopWins ≤ wa ∨ kMinGallopWins ≤ wb ∨ first = true then
-      if h : 0 < s.la ∧ 1 < s.lb then do
-        let mg' := max 1 (mg - 1)
-        setMinGallop mg'
-        let k ← gallop cmp smiMax true .work (← jsAny (← ld .temp s.ct)) baseA s.la (s.la - 1)
-        dcheck (0 ≤ k)
-        let na := s.la - k
-        let pa := max na 0
-        if 0 < na then copy .work (s.cur - pa + 1) .work (s.dest - pa + 1) pa else pure ()
-        if 0 < na ∧ s.la - pa = 0 then
-          pure (.succeed ⟨s.dest - pa, s.ct, s.cur - pa, s.la - pa, s.lb⟩)
-        else do
-          mv .temp s.ct .work (s.dest - pa)
-          if s.lb - 1 = 1 then pure (.copy ⟨s.dest - pa - 1, s.ct - 1, s.cur - pa, s.la - pa, s.lb - 1⟩)
-          else do
-            let k2 ← gallop cmp smiMax false .temp (← jsAny (← ld .work (s.cur - pa))) 0 (s.lb - 1)
-              (s.lb - 2)
-            dcheck (0 ≤ k2)
-            let nb := s.lb - 1 - k2
-            let pb := max nb 0
-            if 0 < nb then copy .temp (s.ct - 1 - pb + 1) .work (s.dest - pa - 1 - pb + 1) pb
-            else pure ()
-            if 0 < nb ∧ s.lb - 1 - pb = 1 then
-              pure (.copy ⟨s.dest - pa - 1 - pb, s.ct - 1 - pb, s.cur - pa, s.la - pa, s.lb - 1 - pb⟩)
-            else if 0 < nb ∧ s.lb - 1 - pb = 0 then
-              pure (.succeed ⟨s.dest - pa - 1 - pb, s.ct - 1 - pb, s.cur - pa, s.la - pa, s.lb - 1 - pb⟩)
-            else do
-              mv .work (s.cur - pa) .work (s.dest - pa - 1 - pb)
-              if s.la - pa - 1 = 0 then
-                pure (.succeed ⟨s.dest - pa - 2 - pb, s.ct - 1 - pb, s.cur - pa - 1, s.la - pa - 1,
-                  s.lb - 1 - pb⟩)
-              else highLoop baseA mg' (.gallop false na nb) ⟨s.dest - pa - 2 - pb, s.ct - 1 - pb,
-                s.cur - pa - 1, s.la - pa - 1, s.lb - 1 - pb⟩
-      else ub
+    if kMinGallopWins ≤ wa ∨ kMinGallopWins ≤ wb ∨ first = true then do
+      dcheck (0 < s.la ∧ 1 < s.lb)
+      setMinGallop (max 1 (mg - 1))
+      let r ← highGallopStep cmp smiMax baseA s
+      match r with
+      | .exit x => pure x
+      | .cont s' na nb =>
+        if _h : s'.la.toNat + s'.lb.toNat < s.la.toNat + s.lb.toNat then
+          highLoop baseA (max 1 (mg - 1)) (.gallop false na nb) s'
+        else ub
     else do
       setMinGallop (mg + 1)
       highLoop baseA (mg + 1) (.simple 0 0) s
 termination_by 2 * (s.la.toNat + s.lb.toNat) + ph.rank
 decreasing_by all_goals simp only [Ph.rank]; omega
 
-def mergeHigh (baseA lengthA baseB lengthB : Int) : M ε Unit := do
-  dcheck (0 < lengthA ∧ 0 < lengthB)
-  dcheck (0 ≤ baseA ∧ 0 < baseB)
-  dcheck (baseA + lengthA = baseB)
-  getTempArray lengthB
-  copy .work baseB .temp 0 lengthB
-  mv .work (baseA + lengthA - 1) .work (baseB + lengthB - 1)
-  let s : MS := ⟨baseB + lengthB - 2, lengthB - 1, baseA + lengthA - 2, lengthA - 1, lengthB⟩
-  let x ← if s.la = 0 then pure (Exit.succeed s)
-    else if s.lb = 1 then pure (Exit.copy s)
-    else do
-      let mg ← getMinGallop
-      highLoop cmp smiMax baseA mg (.simple 0 0) s
-  match x with
+def highRun (baseA : Int) (s : MS) : M ε Exit :=
+  if s.la = 0 then pure (Exit.succeed s)
+  else if s.lb = 1 then pure (Exit.copy s)
+  else do
+    let mg ← getMinGallop
+    highLoop cmp smiMax baseA mg (.simple 0 0) s
+
+def highFinish : Exit → M ε Unit
   | .succeed s =>
     if 0 < s.lb then do
       dcheck (s.la = 0)
@@ -457,6 +474,30 @@ def mergeHigh (baseA lengthA baseB lengthB : Int) : M ε Unit := do
     dcheck (s.lb = 1 ∧ 0 < s.la)
     copy .work (s.cur - s.la + 1) .work (s.dest - s.la + 1) s.la
     mv .temp s.ct .work (s.dest - s.la)
+
+def mergeHigh (baseA lengthA baseB lengthB : Int) : M ε Unit := do
+  dcheck (0 < lengthA ∧ 0 < lengthB)
+  dcheck (0 ≤ baseA ∧ 0 < baseB)
+  dcheck (baseA + lengthA = baseB)
+  getTempArray lengthB
+  copy .work baseB .temp 0 lengthB
+  mv .work (baseA + lengthA - 1) .work (baseB + lengthB - 1)
+  let x ← highRun cmp smiMax baseA ⟨baseB + lengthB - 2, lengthB - 1, baseA + lengthA - 2, lengthA - 1, lengthB⟩
+  highFinish x
+
+def mergeAtTail (baseA lengthA baseB lengthB : Int) : M ε Unit := do
+  let keyRight ← jsAny (← ld .work baseB)
+  let k ← gallop cmp smiMax true .work keyRight baseA lengthA 0
+  dcheck (0 ≤ k)
+  if lengthA - k = 0 then pure ()
+  else do
+    dcheck (0 < lengthA - k)
+    let keyLeft ← jsAny (← ld .work (baseA + k + (lengthA - k) - 1))
+    let lb ← gallop cmp smiMax false .work keyLeft baseB lengthB (lengthB - 1)
+    dcheck (0 ≤ lb)
+    if lb = 0 then pure ()
+    else if lengthA - k ≤ lb then mergeLow cmp smiMax (baseA + k) (lengthA - k) baseB lb
+    else mergeHigh cmp smiMax (baseA + k) (lengthA - k) baseB lb
 
 def mergeAt (i : Int) : M ε Unit := do
   let stackSize ← getSize
@@ -470,25 +511,13 @@ def mergeAt (i : Int) : M ε Unit := do
   dcheck (0 < lengthA ∧ 0 < lengthB)
   dcheck (baseA + lengthA = baseB)
   setRunLen i (lengthA + lengthB)
-  if i = stackSize - 3 then do
+  doIf (i = stackSize - 3) (do
     let base ← runBase (i + 2)
     let length ← runLen (i + 2)
     setRunBase (i + 1) base
-    setRunLen (i + 1) length
-  else pure ()
+    setRunLen (i + 1) length)
   setSize (stackSize - 1)
-  let keyRight ← jsAny (← ld .work baseB)
-  let k ← gallop cmp smiMax true .work keyRight baseA lengthA 0
-  dcheck (0 ≤ k)
-  if lengthA - k = 0 then pure ()
-  else do
-    dcheck (0 < lengthA - k)
-    let keyLeft ← jsAny (← ld .work (baseA + k + (lengthA - k) - 1))
-    let lb ← gallop cmp smiMax false .work keyLeft baseB lengthB (lengthB - 1)
-    dcheck (0 ≤ lb)
-    if lb = 0 then pure ()
-    else if lengthA - k ≤ lb then mergeLow cmp smiMax (baseA + k) (lengthA - k) baseB lb
-    else mergeHigh cmp smiMax (baseA + k) (lengthA - k) baseB lb
+  mergeAtTail cmp smiMax baseA lengthA baseB lengthB
 
 end
 
@@ -540,29 +569,34 @@ def mergeCollapse (p stackSize : Int) : M ε Int :=
 termination_by stackSize.toNat
 decreasing_by omega
 
+def collapseAndPush (length low cur : Int) : M ε Unit := do
+  let stackSize ← getSize
+  if stackSize = 0 then pushRun low cur
+  else do
+    let prevBase ← runBase (stackSize - 1)
+    let prevLen ← runLen (stackSize - 1)
+    let p ← nodePower prevBase prevLen cur length
+    let ss ← mergeCollapse cmp smiMax p stackSize
+    doIf (2 ≤ ss) (do
+      let pw ← getPower (ss - 2)
+      dcheck (pw < p))
+    setPower (ss - 1) p
+    pushRun low cur
+
+def extendRun (low r minRun remaining : Int) : M ε Int :=
+  if r < minRun then do
+    binaryInsertionSort cmp low (low + r) (low + min minRun remaining)
+    pure (min minRun remaining)
+  else pure r
+
 def mainLoop (length mrStep mrRemainder mrThreshold low remaining mrAccum : Int) : M ε Unit :=
   if _h : remaining ≠ 0 then do
     let acc := mrAccum + mrRemainder
     let minRun := if mrThreshold ≤ acc then mrStep + 1 else mrStep
     dcheck (length < 64 ∨ (32 ≤ minRun ∧ minRun ≤ 64))
     let r ← countAndMakeRun cmp low (low + remaining)
-    let cur ← if r < minRun then do
-        binaryInsertionSort cmp low (low + r) (low + min minRun remaining)
-        pure (min minRun remaining)
-      else pure r
-    let stackSize ← getSize
-    if stackSize = 0 then pushRun low cur
-    else do
-      let prevBase ← runBase (stackSize - 1)
-      let prevLen ← runLen (stackSize - 1)
-      let p ← nodePower prevBase prevLen cur length
-      let ss ← mergeCollapse cmp smiMax p stackSize
-      if 2 ≤ ss then do
-        let pw ← getPower (ss - 2)
-        dcheck (pw < p)
-      else pure ()
-      setPower (ss - 1) p
-      pushRun low cur
+    let cur ← extendRun cmp low r minRun remaining
+    collapseAndPush cmp smiMax length low cur
     if _h2 : 0 < cur ∧ cur ≤ remaining then
       mainLoop length mrStep mrRemainder mrThreshold (low + cur) (remaining - cur)
         (if mrThreshold ≤ acc then acc - mrThreshold else acc)
@@ -571,13 +605,16 @@ def mainLoop (length mrStep mrRemainder mrThreshold low remaining mrAccum : Int)
 termination_by remaining.toNat
 decreasing_by omega
 
+def finalPick (s : Int) : M ε Int :=
+  if 0 < s - 2 then do
+    let l1 ← runLen (s - 2 - 1)
+    let l2 ← runLen (s - 2 + 1)
+    pure (if l1 < l2 then s - 2 - 1 else s - 2)
+  else pure (s - 2)
+
 def finalLoop (s : Int) : M ε Unit :=
-  if h : 1 < s then do
-    let n ← if 0 < s - 2 then do
-        let l1 ← runLen (s - 2 - 1)
-        let l2 ← runLen (s - 2 + 1)
-        pure (if l1 < l2 then s - 2 - 1 else s - 2)
-      else pure (s - 2)
+  if _h : 1 < s then do
+    let n ← finalPick s
     mergeAt cmp smiMax n
     let s' ← getSize
     if _h2 : s' < s then finalLoop s' else ub
@@ -671,22 +708,27 @@ structure GFA where
   length : Nat
   deriving Repr
 
+def gfaGrow {ε : Type} (g : GFA) : M ε GFA :=
+  if g.capacity = g.length then do
+    dcheck (g.length ≤ g.capacity + g.capacity / 2 + 16)
+    pure ⟨g.array.take g.length ++ List.replicate (g.capacity + g.capacity / 2 + 16 - g.length) none,
+      g.capacity + g.capacity / 2 + 16, g.length⟩
+  else pure g
+
 def gfaPush {ε : Type} (g : GFA) (x : Option Val) : M ε GFA := do
   dcheck (g.length ≤ g.capacity)
-  let g' ← if g.capacity = g.length then do
-      dcheck (g.length ≤ g.capacity + g.capacity / 2 + 16)
-      pure (⟨g.array.take g.length ++
-        List.replicate (g.capacity + g.capacity / 2 + 16 - g.length) none,
-        g.capacity + g.capacity / 2 + 16, g.length⟩ : GFA)
-    else pure g
+  let g' ← gfaGrow g
   if g'.length < g'.array.length then pure ⟨g'.array.set g'.length x, g'.capacity, g'.length + 1⟩
   else abort
+
+def elemAt {ε : Type} (elems : List (Option Val)) (i : Nat) : M ε (Option Val) :=
+  if i < elems.length then pure (elems.getD i none) else abort
 
 def compactFast {ε : Type} (isToSorted : Bool) (elems : List (Option Val)) (len : Nat) :
     Nat → GFA → Nat → M ε (GFA × Nat)
   | i, g, nu =>
     if _h : i < len then do
-      let x ← if i < elems.length then pure (elems.getD i none) else abort
+      let x ← elemAt elems i
       match x with
       | none => compactFast isToSorted elems len (i + 1) g (if isToSorted then nu + 1 else nu)
       | some v =>
@@ -717,16 +759,18 @@ def compactGeneric (env : Env) (isToSorted : Bool) (len : Nat) :
     else pure (g, nu)
 termination_by i => len - i
 
+def compactLoad (env : Env) (isToSorted : Bool) (len : Nat) (g0 : GFA) : M Ext (GFA × Nat) := do
+  let e ← getExt
+  if e.recv.arr.fast then
+    if e.recv.arr.kind.isDouble then do
+      doIf (e.recv.arr.store = []) ub
+      compactFast isToSorted e.recv.arr.store len 0 g0 0
+    else compactFast isToSorted e.recv.arr.store len 0 g0 0
+  else compactGeneric env isToSorted len 0 g0 0
+
 def compact (env : Env) (isToSorted : Bool) (len : Nat) : M Ext (Nat × Nat) := do
   let c ← getCore
-  let e ← getExt
-  let g0 : GFA := ⟨c.work, c.work.length, 0⟩
-  let res ← if e.recv.arr.fast then
-      if e.recv.arr.kind.isDouble then do
-        if e.recv.arr.store = [] then ub else pure ()
-        compactFast isToSorted e.recv.arr.store len 0 g0 0
-      else compactFast isToSorted e.recv.arr.store len 0 g0 0
-    else compactGeneric env isToSorted len 0 g0 0
+  let res ← compactLoad env isToSorted len ⟨c.work, c.work.length, 0⟩
   let c' ← getCore
   setCore { c' with work := res.1.array }
   pure (res.1.length, res.2)

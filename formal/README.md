@@ -167,6 +167,7 @@ with length 3 and an empty backing store.
 | `ArraySplice` | `Array.prototype.splice` | `src/builtins/array-splice.tq` |
 | `ArrayJoin` | `Array.prototype.join`, `toString` and `toLocaleString` | `src/builtins/array-join.tq` and `WriteChunkListToFlat` in `src/objects/objects.cc` |
 | `ArrayFromAsync` | `Array.fromAsync` | `src/builtins/array-from-async.tq` |
+| `ArraySort` | `Array.prototype.sort`, `toSorted` and the inlined sort continuations | `third_party/v8/builtins/array-sort.tq`, `src/builtins/array-to-sorted.tq` and the continuations in `src/builtins/array.tq` |
 
 Each library has a `README.md` with the correspondence to the V8 sources, the
 theorems, the assumptions and what is not modeled.

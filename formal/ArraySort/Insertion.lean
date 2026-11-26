@@ -197,8 +197,7 @@ theorem reverseLoop_good {frm to : Nat} {c0 : Core} (hto : to ≤ c0.work.length
         { c0 with work := (c.work.set low (c.work.getD high none)).set high (c.work.getD low none) } rfl hp2
       rw [show (low : Int) + 1 = ((low + 1 : Nat) : Int) by omega,
         show (high : Int) - 1 = ((high - 1 : Nat) : Int) by omega]
-      have hc' : { { c with work := c.work.set low (c.work.getD high none) } with
-          work := (c.work.set low (c.work.getD high none)).set high (c.work.getD low none) } =
+      have hc' : { { c with work := c.work.set low (c.work.getD high none) } with work := (c.work.set low (c.work.getD high none)).set high (c.work.getD low none) } =
           { c0 with work := (c.work.set low (c.work.getD high none)).set high (c.work.getD low none) } := by
         rw [hc]
       rw [hc']
@@ -232,10 +231,9 @@ theorem countAndMakeRun_good {lowArg high : Nat} {c : Core} {e : ε} (h : lowArg
     rintro r e2 c2 ⟨hc2, k, hk, hk1, hk2⟩
     subst c2
     subst hk
-    rw [good_ite]
+    rw [good_doIf]
     split
-    · rw [good_bind]
-      unfold reverseRange
+    · unfold reverseRange
       rw [show (lowArg : Int) + (k : Int) - 1 = ((lowArg + k - 1 : Nat) : Int) by omega]
       refine (reverseLoop_good (frm := lowArg) (to := high) (c0 := c) hl (lowArg + k - 1 - lowArg) lowArg
         (lowArg + k - 1) rfl (Nat.le_refl _) (by omega) e2 c rfl (PermOn.refl _ _ _)).mono ?_

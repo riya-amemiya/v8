@@ -4,6 +4,8 @@ namespace ArraySort
 
 open Torque
 
+macro "sos" : tactic => `(tactic| ((try simp only at *) <;> omega))
+
 def Res.Good {ε α : Type} (Q : α → ε → Core → Prop) : Res ε α → Prop
   | .ok a e c => Q a e c
   | .throw _ => True
@@ -78,6 +80,11 @@ theorem good_if_ub {p : Prop} [Decidable p] {r : Res ε α} {Q : α → ε → C
     {c : Core} : ((dcheck p) e c).Good Q ↔ p ∧ Q () e c := by
   unfold dcheck
   exact good_if_ub
+
+theorem good_doIf {p : Prop} [Decidable p] {m : M ε Unit} {Q : Unit → ε → Core → Prop} {e : ε}
+    {c : Core} : ((doIf p m) e c).Good Q ↔ (if p then (m e c).Good Q else Q () e c) := by
+  unfold doIf
+  split <;> rfl
 
 @[simp] theorem good_jsAny {x : Option Val} {Q : Val → ε → Core → Prop} {e : ε} {c : Core} :
     ((jsAny x) e c).Good Q ↔ ∃ v, x = some v ∧ Q v e c := by
@@ -232,6 +239,9 @@ theorem Core.put_size (c : Core) (a : Arr) (l : List (Option Val)) : (c.put a l)
 theorem Core.put_minGallop (c : Core) (a : Arr) (l : List (Option Val)) :
     (c.put a l).minGallop = c.minGallop := by
   cases a <;> rfl
+
+macro "bnd" : tactic =>
+  `(tactic| ((try simp only [Core.get_work, Core.get_temp, List.length_set] at *) <;> omega))
 
 section Seg
 
