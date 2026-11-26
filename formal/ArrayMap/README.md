@@ -22,11 +22,11 @@ witness loop of `ArrayWitness`, which this library imports, on a
 | Lean | Torque |
 | --- | --- |
 | `Vec` | `Vector`, with `onlySmis`, `onlyNumbers`, `onlyNumbersAndUndefined` and `skippedElements` |
-| `newVector` | `NewVector`, which allocates `AllocateFixedArrayWithHoles(len)` |
+| `newVector` | `NewVector`, whose `fixedArray` starts filled with holes |
 | `noteResult`, `storeResult` | `StoreResult`, whose store into `fixedArray.objects[index]` is bounds checked |
 | `body` | one iteration of `FastArrayMap`: `ReportSkippedElement` on a hole, otherwise the call of `callbackfn` and `StoreResult` |
 | `baseKind`, `resultKind` | the kind choice in `CreateJSArray`, made holey by `FastHoleyElementsKind` when an element was skipped or `validLength` is below the length |
-| `doubleOk` | the `UnsafeCast<(Number \| Undefined \| TheHole)>` in the double copy of `CreateJSArray` |
+| `doubleOk` | the `UnsafeCast` of each value to a number, the hole, or `undefined` under `V8_ENABLE_UNDEFINED_DOUBLE`, in the double copy of `CreateJSArray` |
 | `createJSArray` | `CreateJSArray`, which copies the first `validLength` values into `AllocateFixedDoubleArrayWithHoles(length)` for a double kind and installs `fixedArray` otherwise |
 | `finish` | `vector.CreateJSArray(len)` after the loop |
 | `fastMap` | `ArrayMap` from the species check to the return of `FastArrayMap` |
