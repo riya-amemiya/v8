@@ -35,7 +35,7 @@ imports.
 | `copyForToSpliced` | `CopyFastPackedArrayForToSpliced`, with `AllocateFixedArray(kind, newLen)` and two `CopyElements`, whose ranges are checked only with `CSA_DCHECK` |
 | `fillZero` | `FillFixedArrayWithSmiZero` and `FillFixedDoubleArrayWithZero` for the slots of the inserted items |
 | `insertKind`, `isSmiKind`, `isHeapNumber`, `allowDouble`, `allowNonNumber` | `TransitionElementsKindForInsertionIfNeeded` in `array-splice.tq`, with `IsFastSmiElementsKind`, `IsHeapNumber`, `AllowDoubleElements` and `AllowNonNumberElements` |
-| `transitionCopy` | `TransitionElementsKindWithKind`, the runtime call of `JSObject::TransitionElementsKind`, with `none` for an abort when a backing store above `lim.maxLen` has to be converted |
+| `transitionCopy` | `TransitionElementsKindWithKind`, the runtime call of `JSObject::TransitionElementsKind`, with `none` for the `FATAL` that `JSObject::TransitionElementsKind` in `src/objects/js-objects.cc` raises when `GrowCapacityAndConvert` fails to convert a backing store above `lim.maxLen` |
 | `insertLoop` | `InsertArgumentsIntoFastPackedArray`, whose `UnsafeCast<ElementType>` of a non-number into a `FixedDoubleArray` is undefined behavior |
 | `Result.slow` | `Slow` and `GenericArrayToSpliced` |
 | `Result.throws` | `ThrowTypeError(MessageTemplate::kInvalidArrayLength)` |
